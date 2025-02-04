@@ -1,4 +1,5 @@
 #include <mpi.h>
+#include <mpe.h>
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -7,30 +8,45 @@ const double EPS = 1e-5; // критерий завершения
 const double TAU = 0.01; // коэффициент
 
 // умножение подматрицы A на вектор x
-std::vector<double> MatVectMult(const std::vector<std::vector<double>>& A, const std::vector<double>& x, int start_row, int rows) {
+std::vector<double> MatVectMult(const std::vector<std::vector<double>>& A, 
+                                const std::vector<double>& x, int rows) {
     int cols = x.size();
     std::vector<double> result(rows, 0.0);
     for (int i = 0; i < rows; ++i) {
         for (int j = 0; j < cols; ++j) {
-            result[i] += A[start_row + i][j] * x[j];
+            result[i] += A[i][j] * x[j];
         }
     }
     return result;
 }
 
 int main(int argc, char** argv) {
+    // Инициализация MPI и профайлера MPE
     MPI_Init(&argc, &argv);
+    MPE_Init_log();
 
     int rank, num_procs;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank); // ранг текущего процеесса в коммуникаторе
-    MPI_Comm_size(MPI_COMM_WORLD, &num_procs); // общее количество процессов в коммуникаторе
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);   // ранг процесса
+    MPI_Comm_size(MPI_COMM_WORLD, &num_procs); // общее число процессов
 
-    int N = 100; // размерность матрицы A (N на N)
+    // идентификаторы событий для профилирования
+    int evtid_begin_init = MPE_Log_get_event_number();
+    int evtid_end_init   = MPE_Log_get_event_number();
+    int evtid_begin_iter = MPE_Log_get_event_number();
+    int evtid_end_iter   = MPE_Log_get_event_number();
+
+    // описание фаз профилирования
+    MPE_Describe_state(evtid_begin_init, evtid_end_init, "Initialization", "green");
+    MPE_Describe_state(evtid_begin_iter, evtid_end_iter, "Iteration", "blue");
+
+    // ФАЗА ИНИЦИАЛИЗАЦИИ
+    MPE_Log_event(evtid_begin_init, rank, (char*)"" );
+
+    int N = 100;              // размерность матрицы A (N x N)
     int local_N = N / num_procs; // количество строк на каждый процесс
 
-    // инициализация данных в матрице А (элементы главной диагонали = 2.0, остальные = 1.0)
+    // Каждый процесс выделяет память только для своей части матрицы A
     std::vector<std::vector<double>> A(local_N, std::vector<double>(N, 1.0));
-
     int global_row_start = rank * local_N;
     for (int i = 0; i < local_N; ++i) {
         for (int j = 0; j < N; ++j) {
@@ -42,70 +58,60 @@ int main(int argc, char** argv) {
         }
     }
 
-    // // рассылаем матрицу A на всех процессах помимо главного процесса 0
-    // MPI_Bcast(A.data(), N * N, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-
-    // вектор u, элементы которого заполняются по формуле u_i = sin(2 * Pi * i) / N
+    // u-вектор, элементы которого вычисляются по формуле: u_i = sin(2 * Pi * i / N)
     std::vector<double> u(N);
     for (int i = 0; i < N; ++i) {
         u[i] = std::sin(2 * M_PI * i / N);
     }
 
-    // вектор b = A * u (матрица A умножается на вектор u)
-    // std::vector<double> global_b(N, 0.0);
-    // if (rank == 0) {
-    //     global_b = MatVectMult(A, u, 0, N);
-    // }
-
-    // // разделяем вектор b между процессами
-    // MPI_Bcast(global_b.data(), N, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-
-    // Вычисляем локальный b = A * u
-    std::vector<double> b_local = MatVectMult(A, u, 0, local_N);
-    // Собираем глобальный вектор b на всех процессах:
+    // ыычисляем локальный вектор b = A * u
+    std::vector<double> b_local = MatVectMult(A, u, local_N);
+    // собираем глобальный вектор b на всех процессах
     std::vector<double> global_b(N, 0.0);
     MPI_Allgather(b_local.data(), local_N, MPI_DOUBLE, global_b.data(), local_N, MPI_DOUBLE, MPI_COMM_WORLD);
-    
-    std::vector<double> global_x(N, 0.0); // начальные значения элементов x = 0
 
-    // разделяем вектор x на всех процессах (для варианта 1 или 2???)
+    // Инициализируем вектор x (начальное приближение x = 0)
+    std::vector<double> global_x(N, 0.0);
     MPI_Bcast(global_x.data(), N, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-    // начало замера времени работы итерационной части программы
+    // конец фазы инициализации
+    MPE_Log_event(evtid_end_init, rank, (char*)"" );
+
+    // ФАЗА ИТЕРАЦИОННОГО ПРОЦЕССА
+    // начало фазы фикируем
+    MPE_Log_event(evtid_begin_iter, rank, (char*)"" );
+
+    // начало замера времени итерационного процесса
     double start_time = MPI_Wtime();
 
-    // итерации метода
     bool converged = false;
     int iter = 0;
     while (!converged) {
-        // локальное произведение матрицы и вектора
-        std::vector<double> Ax_local = MatVectMult(A, global_x, 0, local_N); // A содержит только local_N строк
+        // локальное произведение матрицы и вектора: Ax_local = A * global_x
+        std::vector<double> Ax_local = MatVectMult(A, global_x, local_N);
 
-        // собираем Ax на всех процессах
+        // все процесс получают полный вектор Ax
         std::vector<double> Ax(N, 0.0);
         MPI_Allgather(Ax_local.data(), local_N, MPI_DOUBLE, Ax.data(), local_N, MPI_DOUBLE, MPI_COMM_WORLD);
 
-        // обновляем x (формула: x^(n+1) = x^n - TAU * (Ax^n - b))
+        // обновляем x по формуле: x^(n+1) = x^n - TAU * (Ax^n - b)
         for (int i = 0; i < N; ++i) {
-            double new_x = global_x[i] - TAU * (Ax[i] - global_b[i]);
-            global_x[i] = new_x;
+            global_x[i] = global_x[i] - TAU * (Ax[i] - global_b[i]);
         }
 
-        // вычисление нормы ||Ax^n - b||
+        // НИЖЕ - УСЛОВИЯ ЗАВЕРШЕНИЯ ИТЕРАЦИИ
+        // Вычисляем норму ||Ax - b||
         double norm_Ax_minus_b = 0.0;
         for (int i = 0; i < N; ++i) {
             norm_Ax_minus_b += (Ax[i] - global_b[i]) * (Ax[i] - global_b[i]);
         }
-
-        // вычисление нормы ||b||
+        // Вычисляем норму ||b||
         double norm_b = 0.0;
         for (int i = 0; i < N; ++i) {
             norm_b += global_b[i] * global_b[i];
         }
 
-        // проверка сходимости
-        double global_norm_Ax_minus_b;
-        double global_norm_b;
+        double global_norm_Ax_minus_b, global_norm_b;
         MPI_Allreduce(&norm_Ax_minus_b, &global_norm_Ax_minus_b, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
         MPI_Allreduce(&norm_b, &global_norm_b, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
@@ -114,23 +120,29 @@ int main(int argc, char** argv) {
             converged = true;
         }
 
+        // считать итерации на одном процессе
         if (rank == 0) {
-            std::cout << "Iteration " << iter++ << ": relative error = " << relative_error << std::endl;
+            iter++;
         }
     }
 
-    double end_time = MPI_Wtime(); // Конец времени
+    double end_time = MPI_Wtime();
     double total_time = end_time - start_time;
 
-    // сбор времени работы всех процессов
+    // Фиксируем конец итерационного этапа
+    MPE_Log_event(evtid_end_iter, rank, (char*)"" );
+
+    // собираем время работы (минимальное среди процессов)
     double total_time_all;
-    MPI_Reduce(&total_time, &total_time_all, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&total_time, &total_time_all, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
         std::cout << "Converged in " << iter << " iterations." << std::endl;
-        // std::cout << "Time taken for " << num_procs << " processes: " << total_time_all << " seconds." << std::endl;
         std::cout << "Total time: " << total_time_all << " seconds." << std::endl;
     }
+
+    // завершаем профилирование и записываем лог в файл "profile.clog2"
+    MPE_Finish_log("profile");
 
     MPI_Finalize();
     return 0;

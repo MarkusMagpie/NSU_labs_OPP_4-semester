@@ -1,10 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Значения (замените на свои данные)
-n_processes = np.array([1, 2, 4, 8, ])
+n_processes = np.array([1, 2, 4, 8, 14])
 T = np.array([])
-speedup = T[0] / T   # S(n) = T(1)/T(n)
+speedup = T[0] / T
 efficiency = speedup / n_processes  # E(n) = S(n)/n
 
 # график времени работы
