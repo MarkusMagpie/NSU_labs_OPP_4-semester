@@ -3,6 +3,7 @@
 #include <iostream>
 #include <vector>
 #include <cmath>
+#include <cstdlib> // atoi
 
 const double EPS = 1e-5; // критерий завершения
 const double TAU = 0.01; // коэффициент
@@ -21,13 +22,34 @@ std::vector<double> MatVectMult(const std::vector<std::vector<double>>& A,
 }
 
 int main(int argc, char** argv) {
-    // Инициализация MPI и профайлера MPE
+    // инициализация MPI и профайлера MPE
     MPI_Init(&argc, &argv);
     MPE_Init_log();
 
     int rank, num_procs;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);   // ранг процесса
     MPI_Comm_size(MPI_COMM_WORLD, &num_procs); // общее число процессов
+
+    int mode = 1;
+    if (argc > 1) {
+        mode = std::atoi(argv[1]);
+        if (mode != 1 && mode != 2) {
+            if (rank == 0) {
+                std::cerr << "Invalid mode. Use 1 or 2." << std::endl;
+            }
+            MPI_Finalize();
+            return 0;
+        }
+    }
+    
+    if (rank == 0) {
+        std::cout << "Mode: " << mode << std::endl;
+        if (mode == 1) {
+            std::cout << "Vectors x and b are duplicated on all MPI processes." << std::endl;
+        } else {
+            std::cout << "Vectors x and b are partitioned among MPI processes." << std::endl;
+        }
+    }
 
     // идентификаторы событий для профилирования
     int evtid_begin_init = MPE_Log_get_event_number();
