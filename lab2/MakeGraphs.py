@@ -1,48 +1,60 @@
 import matplotlib.pyplot as plt
 
-# Число потоков, с которыми запускались тесты
 threads = [1, 2, 4, 8]
 
-# Считываем времена работы из файла
 def parse_results(filename):
     times = []
+    # with open(filename, 'r') as f:
+    #     for line in f:
+    #         if "Time taken:" in line:
+    #             time = float(line.split("Time taken:")[1].split()[0])  # первый сепаратор - тайм тейкен, второй - пробел
+    #             times.append(time)
     with open(filename, 'r') as f:
         for line in f:
-            if "Time taken:" in line:
-                time = float(line.split("Time taken:")[1].split()[0])  # Извлекаем время
-                times.append(time)
+            time = float(line.strip())
+            times.append(time)
     return times
 
 # Основная функция
 def main():
-    results_file = "results.txt"
-    times = parse_results(results_file)
+    results_file1 = "results1.txt"
+    results_file2 = "results2.txt"
 
-    if len(times) != len(threads):
-        print("Хуйня")
+    times1 = parse_results(results_file1)
+    times2 = parse_results(results_file2)
+
+    if len(times1) != len(threads) or len(times2) != len(threads):
+        print("хуйня")
         return
 
     # вычисляю speedup и эффективность
-    t1 = times[0]  # время на первом потоке
-    speedups = [t1 / t for t in times]
-    efficiencies = [s / t for s, t in zip(speedups, threads)]
+    speedups1 = [times1[0] / t for t in times1]
+    efficiencies1 = [s / t for s, t in zip(speedups1, threads)]
 
-    # Построение графиков
+    speedups2 = [times2[0] / t for t in times2]
+    efficiencies2 = [s / t for s, t in zip(speedups2, threads)]
+
+
+
+
+    # простроение двух графиков
     plt.figure(figsize=(10, 5))
 
     plt.subplot(1, 2, 1)
-    plt.plot(threads, speedups, marker='o', linestyle='-', color='b', label="Ускорение")
+    plt.plot(threads, speedups1, marker='o', linestyle='-', color='b', label="Несколько секций")
+    plt.plot(threads, speedups2, marker='s', linestyle='--', color='g', label="Одна секция")
     plt.xlabel("Число потоков")
     plt.ylabel("Ускорение")
-    plt.title("График ускорения")
+    plt.title("Графики ускорения распараллеленных программ")
     plt.grid(True)
     plt.legend()
 
     plt.subplot(1, 2, 2)
-    plt.plot(threads, efficiencies, marker='o', linestyle='-', color='r', label="Эффективность")
+    plt.plot(threads, efficiencies1, marker='o', linestyle='-', color='r', label="Несколько секций")
+    plt.plot(threads, efficiencies2, marker='s', linestyle='--', color='m', label="Одна секция")
     plt.xlabel("Число потоков")
     plt.ylabel("Эффективность")
-    plt.title("График эффективности")
+    plt.title("Графики эффективности распараллеленных программ")
     plt.grid(True)
     plt.legend()
 

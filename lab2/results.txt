@@ -1,4 +1,0 @@
-iterations = 1529 ; Time taken: 25.9582 sec.
-iterations = 1529 ; Time taken: 13.4646 sec.
-iterations = 1529 ; Time taken: 6.97206 sec.
-iterations = 1529 ; Time taken: 4.6719 sec.

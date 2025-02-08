@@ -1,6 +1,6 @@
 #include <iostream>
 #include <vector>
-#include <cstring>    // Для memcpy
+#include <cstring>    // std::memcpy
 #include <cmath>
 #include <omp.h>      // OpenMP для параллельных вычислений
 
@@ -32,9 +32,9 @@ int main() {
     std::vector<double> vector_x(N);
     std::vector<double> next_x(N);
 
-    initialize(matrix_a, vector_b, next_x);
-    // начальное приближение из next_x в vector_x
-    std::memcpy(&vector_x[0], &next_x[0], N * sizeof(double));
+    initialize(matrix_a, vector_b, vector_x);
+    // std::memcpy(&next_x[0], &vector_x[0], N * sizeof(double));
+    std::fill(next_x.begin(), next_x.end(), 0);
 
     int iterations_count = 0;
     double current_norm = 0;
@@ -73,8 +73,11 @@ int main() {
     double elapsed = end_time - start_time;
 
     // std::cout << next_x[0] << " ; ";
-    std::cout << "iterations = " << iterations_count << " ; ";
-    std::cout << "Time taken: " << elapsed << " sec.\n";
+    
+    // std::cout << "iterations = " << iterations_count << " ; ";
+    // std::cout << "Time taken: " << elapsed << " sec.\n";
+
+    std::cout << elapsed << std::endl;
 
     return 0;
 }

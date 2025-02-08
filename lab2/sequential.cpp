@@ -32,8 +32,9 @@ int main() {
     std::vector<double> vector_x(N);
     std::vector<double> next_x(N);
 
-    initialize(matrix_a, vector_b, next_x);
-    std::memcpy(&vector_x[0], &next_x[0], N * sizeof(double));
+    initialize(matrix_a, vector_b, vector_x);
+    // std::memcpy(&next_x[0], &vector_x[0], N * sizeof(double));
+    std::fill(next_x.begin(), next_x.end(), 0);
 
     int iterations_count = 0;
     double current_norm = 0;
