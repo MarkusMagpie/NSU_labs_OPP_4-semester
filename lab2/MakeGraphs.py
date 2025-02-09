@@ -38,9 +38,18 @@ def main():
 
 
     # простроение двух графиков
-    plt.figure(figsize=(10, 5))
+    plt.figure(figsize=(16, 6))
 
-    plt.subplot(1, 2, 1)
+    plt.subplot(1, 3, 1)
+    plt.plot(threads, times1, marker='o', linestyle='-', color='y', label="Несколько секций")
+    plt.plot(threads, times2, marker='s', linestyle='--', color='c', label="Одна секция")
+    plt.xlabel("Число потоков")
+    plt.ylabel("Время выполнения")
+    plt.title("Графики времени выполнения распараллеленных программ")
+    plt.grid(True)
+    plt.legend()
+
+    plt.subplot(1, 3, 2)
     plt.plot(threads, speedups1, marker='o', linestyle='-', color='b', label="Несколько секций")
     plt.plot(threads, speedups2, marker='s', linestyle='--', color='g', label="Одна секция")
     plt.xlabel("Число потоков")
@@ -49,7 +58,7 @@ def main():
     plt.grid(True)
     plt.legend()
 
-    plt.subplot(1, 2, 2)
+    plt.subplot(1, 3, 3)
     plt.plot(threads, efficiencies1, marker='o', linestyle='-', color='r', label="Несколько секций")
     plt.plot(threads, efficiencies2, marker='s', linestyle='--', color='m', label="Одна секция")
     plt.xlabel("Число потоков")
