@@ -6,7 +6,7 @@
 #include <fstream>
 
 const int MAX_ITERATIONS = 40000;
-const double EPSILON = 0.001;
+const double EPSILON = 0.01;
 const double TAU = -0.01;
 const int N = 2500; // размерность мтатрицы A из фаайлика Матвееыва
 
@@ -67,8 +67,6 @@ int main() {
     }
     b_norm = std::sqrt(b_norm);
 
-    float rel_error;
-
     for (; iterations_count < MAX_ITERATIONS; ++iterations_count) {
         current_norm = 0;
 
@@ -84,7 +82,7 @@ int main() {
             current_norm += sum * sum;
         }
 
-        rel_error = std::sqrt(current_norm) / b_norm;
+        float rel_error = std::sqrt(current_norm) / b_norm;
         // std::cout << "Iteration " << iterations_count << ": " << rel_error << std::endl;
         if (rel_error < EPSILON) {
             break;
