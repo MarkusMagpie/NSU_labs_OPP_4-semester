@@ -5,7 +5,7 @@
 #include <omp.h>      // OpenMP для параллельных вычислений
 
 const int MAX_ITERATIONS = 10000;
-const double EPSILON = 0.000001;
+const double EPSILON = 0.00001;
 const double TAU = 0.001;
 const int N = 1990;
 
@@ -27,7 +27,6 @@ int main() {
     std::vector<double> matrix_a(N * N);
     std::vector<double> vector_b(N);
     std::vector<double> vector_x(N);
-    std::vector<double> next_x(N);
 
     initialize(matrix_a, vector_b, vector_x);
     std::fill(next_x.begin(), next_x.end(), 0.0);

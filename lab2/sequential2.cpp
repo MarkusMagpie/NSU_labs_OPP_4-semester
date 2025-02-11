@@ -6,8 +6,8 @@
 #include <fstream> // std::ifstream
 
 const int MAX_ITERATIONS = 10000;
-const double EPSILON = 1e-8;
-const double TAU = 0.004;
+const double EPSILON = 1e-2;
+const double TAU = -0.01;
 const int N = 2500; // размерность мтатрицы A из фаайлика Матвееыва
 
 // void initialize(std::vector<float>& matrix, std::vector<double>& vector_b, std::vector<double>& vector_x) {
@@ -47,7 +47,6 @@ int main() {
     std::vector<float> matrix_a(N * N);
     std::vector<float> vector_b(N);
     std::vector<float> vector_x(N);
-    std::vector<float> next_x(N);
 
     // initialize(matrix_a, vector_b, next_x);
 
@@ -57,7 +56,9 @@ int main() {
         return 0;
     } // типа ошибка при загрузке
 
-    std::memcpy(&next_x[0], &vector_x[0], N * sizeof(float));
+    std::fill(vector_x.begin(), vector_x.end(), 0.f);
+
+    // std::memcpy(&next_x[0], &vector_x[0], N * sizeof(float));
 
     int iterations_count = 0;
     float current_norm = 0;
@@ -77,12 +78,13 @@ int main() {
                 sum += matrix_a[i * N + j] * vector_x[j];
             }
             // x^(n+1) = x^n - tau * sum
-            next_x[i] = vector_x[i] - TAU * sum;
+            // next_x[i] = vector_x[i] - TAU * sum;
+            vector_x[i] -= TAU * sum;
             // обновил нормы
             current_norm += sum * sum; 
         }
         // обновляем вектор приближения x
-        std::memcpy(&vector_x[0], &next_x[0], N * sizeof(float));
+        // std::memcpy(&vector_x[0], &next_x[0], N * sizeof(float));
         
         float rel_error = std::sqrt(current_norm) / b_norm;
         if (rel_error < EPSILON) {
@@ -90,13 +92,17 @@ int main() {
             break;
         } else {
             std::cout << "Iteration " << iterations_count << ": " << rel_error << std::endl;
+            
+            // for (int i = 0; i < 100; ++i) {
+            //     std::cout << vector_x[i] << " ";
+            // }
+            // std::cout << std::endl;
         }
     }
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
 
-    // std::cout << next_x[0] << " ; ";
     std::cout << "iterations = " << iterations_count << " ; ";
     std::cout << "Time taken: " << elapsed.count() << " sec.\n";
     

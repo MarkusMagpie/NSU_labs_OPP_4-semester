@@ -5,7 +5,7 @@
 #include <cmath>
 
 const int MAX_ITERATIONS = 10000;
-const double EPSILON = 0.000001;
+const double EPSILON = 0.001;
 const double TAU = 0.001;
 const int N = 1990; // размерность мтатрицы A
 
@@ -30,11 +30,8 @@ int main() {
     std::vector<double> matrix_a(N * N);
     std::vector<double> vector_b(N);
     std::vector<double> vector_x(N);
-    std::vector<double> next_x(N);
 
     initialize(matrix_a, vector_b, vector_x);
-    // std::memcpy(&next_x[0], &vector_x[0], N * sizeof(double));
-    std::fill(next_x.begin(), next_x.end(), 0);
 
     int iterations_count = 0;
     double current_norm = 0;
@@ -54,12 +51,10 @@ int main() {
                 sum += matrix_a[i * N + j] * vector_x[j];
             }
             // x^(n+1) = x^n - tau * sum
-            next_x[i] = vector_x[i] - TAU * sum;
+            vector_x[i] -= TAU * sum;
             // обновил нормы
             current_norm += sum * sum; 
         }
-        // обновляем вектор приближения x
-        std::memcpy(&vector_x[0], &next_x[0], N * sizeof(double));
         
         if ((std::sqrt(current_norm) / std::sqrt(b_norm)) < EPSILON) {
             break;
@@ -71,7 +66,6 @@ int main() {
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
 
-    // std::cout << next_x[0] << " ; ";
     std::cout << "iterations = " << iterations_count << " ; ";
     std::cout << "Time taken: " << elapsed.count() << " sec.\n";
     
