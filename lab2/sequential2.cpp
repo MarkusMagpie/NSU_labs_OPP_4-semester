@@ -51,8 +51,7 @@ int main() {
     // initialize(matrix_a, vector_b, next_x);
 
     if (!loadBinary("matA.bin", matrix_a, N * N) ||
-        !loadBinary("vecB.bin", vector_b, N) ||
-        !loadBinary("vecX.bin", vector_x, N)) {
+        !loadBinary("vecB.bin", vector_b, N)) {
         return 0;
     } // типа ошибка при загрузке
 

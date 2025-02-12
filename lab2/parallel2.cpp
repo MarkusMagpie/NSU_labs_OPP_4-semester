@@ -5,9 +5,9 @@
 #include <omp.h>      // OpenMP для параллельных вычислений
 #include <fstream>
 
-const int MAX_ITERATIONS = 40000;
-const double EPSILON = 0.01;
-const double TAU = -0.01;
+const int MAX_ITERATIONS = 100000;
+const double EPSILON = 1e-3;
+const double TAU = -0.03;
 const int N = 2500; // размерность мтатрицы A из фаайлика Матвееыва
 
 // void initialize(std::vector<float>& matrix, std::vector<double>& vector_b, std::vector<double>& vector_x) {
@@ -48,11 +48,8 @@ int main() {
     std::vector<float> vector_b(N);
     std::vector<float> vector_x(N);
 
-    // initialize(matrix_a, vector_b, vector_x);
-
     if (!loadBinary("matA.bin", matrix_a, N * N) ||
-        !loadBinary("vecB.bin", vector_b, N) ||
-        !loadBinary("vecX.bin", vector_x, N)) {
+        !loadBinary("vecB.bin", vector_b, N)) {
         return 0;
     } // типа ошибка при загрузке
 

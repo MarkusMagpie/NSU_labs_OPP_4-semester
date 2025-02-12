@@ -7,11 +7,11 @@ g++ -fopenmp -O3 -o parallel1 parallel1.cpp
 RESULTS_FILE="results1.txt"
 > "$RESULTS_FILE"
 
-THREADS=(1 2 4 6)
+THREADS=(1 2 4 6 8)
 
 echo "Несколько параллельных секций"
 for t in "${THREADS[@]}"; do
-    echo "========================================"
+    echo "==========================="
     echo "Запуск с OMP_NUM_THREADS=$t"
     export OMP_NUM_THREADS=$t
     # вывод в файл результатов
@@ -27,7 +27,7 @@ RESULTS_FILE2="results2.txt"
 echo ""
 echo "Одна параллельная секция"
 for t in "${THREADS[@]}"; do
-    echo "========================================"
+    echo "==========================="
     echo "Запуск с OMP_NUM_THREADS=$t"
     export OMP_NUM_THREADS=$t
     ./parallel2 | tee -a "$RESULTS_FILE2"

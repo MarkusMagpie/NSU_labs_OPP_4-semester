@@ -5,9 +5,9 @@
 #include <omp.h>      // OpenMP для параллельных вычислений
 #include <fstream>
 
-const int MAX_ITERATIONS = 40000;
-const double EPSILON = 0.01;
-const double TAU = -0.01;
+const int MAX_ITERATIONS = 100000;
+const double EPSILON = 1e-3;
+const double TAU = -0.03;
 const int N = 2500; // размерность мтатрицы A из фаайлика Матвееыва
 
 // void initialize(std::vector<float>& matrix, std::vector<double>& vector_b, std::vector<double>& vector_x) {
@@ -40,6 +40,14 @@ bool loadBinary(const std::string& filename, std::vector<float>& data, size_t ex
     return true;
 }
 
+float multMatrixVector(const std::vector<float>& matrix, const std::vector<float>& vector) {
+    float result = 0;
+    for (int i = 0; i < N; ++i) {
+        result += matrix[i] * vector[i];
+    }
+    return result;
+}
+
 int main() {
     // функция из OpenMP для подсчета времени
     double start_time = omp_get_wtime();
@@ -48,14 +56,13 @@ int main() {
     std::vector<float> vector_b(N);
     std::vector<float> vector_x(N);
 
-    // initialize(matrix_a, vector_b, vector_x);
+    // std::vector<float> correct_x(N);
 
     if (!loadBinary("matA.bin", matrix_a, N * N) ||
-        !loadBinary("vecB.bin", vector_b, N) ||
-        !loadBinary("vecX.bin", vector_x, N)) {
+        !loadBinary("vecB.bin", vector_b, N)) {
         return 0;
     } // типа ошибка при загрузке
-
+    
     std::fill(vector_x.begin(), vector_x.end(), 0.f);
 
     int iterations_count = 0;
@@ -95,6 +102,15 @@ int main() {
     // std::cout << "iterations = " << iterations_count << " ; ";
     // std::cout << "rel_error = " << rel_error << " ; ";
     // std::cout << "Time taken: " << elapsed << " sec.\n";
+
+    // double diff = 0;
+    // for (int i = 0; i < N; ++i) {
+    //     for (int j = 0; j < N; ++j) {
+    //         diff += (vector_x[i] - correct_x[i]) * (vector_x[i] - correct_x[i]);
+    //     }
+    // }
+    // diff = std::sqrt(diff);
+    // std::cout << "diff = " << diff << std::endl;
 
     std::cout << elapsed << std::endl;
 
