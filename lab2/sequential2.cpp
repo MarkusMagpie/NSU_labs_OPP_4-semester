@@ -10,7 +10,7 @@ const double EPSILON = 1e-2;
 const double TAU = -0.01;
 const int N = 2500; // размерность мтатрицы A из фаайлика Матвееыва
 
-// void initialize(std::vector<float>& matrix, std::vector<double>& vector_b, std::vector<double>& vector_x) {
+// void initialize(std::vector<float>& matrix, std::vector<float>& vector_b, std::vector<float>& vector_x) {
 //     for (int i = 0; i < N; ++i) {
 //         vector_x[i] = 0;
 //         vector_b[i] = N + 1;
@@ -41,70 +41,63 @@ bool loadBinary(const std::string& filename, std::vector<float>& data, size_t ex
     return true;
 }
 
-int main() {
-    auto start = std::chrono::high_resolution_clock::now();
-
-    std::vector<float> matrix_a(N * N);
-    std::vector<float> vector_b(N);
-    std::vector<float> vector_x(N);
-
-    // initialize(matrix_a, vector_b, next_x);
-
-    if (!loadBinary("matA.bin", matrix_a, N * N) ||
-        !loadBinary("vecB.bin", vector_b, N)) {
-        return 0;
-    } // типа ошибка при загрузке
-
-    std::fill(vector_x.begin(), vector_x.end(), 0.f);
-
-    // std::memcpy(&next_x[0], &vector_x[0], N * sizeof(float));
-
-    int iterations_count = 0;
-    float current_norm = 0;
-    
+void iterate(std::vector<float>& matrix_a, std::vector<float>& vector_b, std::vector<float>& vector_x, int iterations_count) {
     float b_norm = 0;
     for (int i = 0; i < N; ++i) {
         b_norm += vector_b[i] * vector_b[i];
     }
     b_norm = std::sqrt(b_norm);
-    
+
+    float current_norm;
     for (; iterations_count < MAX_ITERATIONS; ++iterations_count) {
         current_norm = 0;
+
         for (int i = 0; i < N; ++i) {
-            // sum = -b + A*x^n
             float sum = -vector_b[i];
             for (int j = 0; j < N; ++j) {
                 sum += matrix_a[i * N + j] * vector_x[j];
             }
-            // x^(n+1) = x^n - tau * sum
-            // next_x[i] = vector_x[i] - TAU * sum;
             vector_x[i] -= TAU * sum;
-            // обновил нормы
-            current_norm += sum * sum; 
+            current_norm += sum * sum;
         }
-        // обновляем вектор приближения x
-        // std::memcpy(&vector_x[0], &next_x[0], N * sizeof(float));
-        
+
         float rel_error = std::sqrt(current_norm) / b_norm;
+        // std::cout << "iteration: " << iterations_count << "; rel_error: " << rel_error << std::endl;
         if (rel_error < EPSILON) {
-            std::cout << "Relative error: " << rel_error << ", EPS: " << EPSILON << std::endl;
             break;
-        } else {
-            std::cout << "Iteration " << iterations_count << ": " << rel_error << std::endl;
-            
-            // for (int i = 0; i < 100; ++i) {
-            //     std::cout << vector_x[i] << " ";
-            // }
-            // std::cout << std::endl;
         }
     }
+}
 
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = end - start;
+int main() {
+    std::vector<float> matrix_a(N * N);
+    std::vector<float> vector_b(N);
+    std::vector<float> vector_x(N, 0.f); // инициализируем вектор_x нулями
 
-    std::cout << "iterations = " << iterations_count << " ; ";
-    std::cout << "Time taken: " << elapsed.count() << " sec.\n";
-    
+    // std::vector<float> correct_x(N);
+    // loadBinary("vecX.bin", vector_x, N);
+
+    if (!loadBinary("matA.bin", matrix_a, N * N) ||
+        !loadBinary("vecB.bin", vector_b, N)) {
+        return 0;
+    } // ошибка при загрузке
+
+    auto start_time = std::chrono::high_resolution_clock::now();
+    iterate(matrix_a, vector_b, vector_x, 0);
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end_time - start_time;
+
+    // double diff = 0;
+    // for (int i = 0; i < N; ++i) {
+    //     for (int j = 0; j < N; ++j) {
+    //         diff += (vector_x[i] - correct_x[i]) * (vector_x[i] - correct_x[i]);
+    //     }
+    // }
+    // diff = std::sqrt(diff);
+    // std::cout << "diff = " << diff << std::endl;
+
+    std::cout << elapsed.count() << std::endl;
+
     return 0;
 }
 
