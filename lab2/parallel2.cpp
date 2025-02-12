@@ -8,7 +8,7 @@
 
 const int MAX_ITERATIONS = 100000;
 const double EPSILON = 1e-2;
-const double TAU = -0.03;
+const double TAU = -0.01;
 const int N = 2500; // размерность мтатрицы A из фаайлика Матвееыва
 
 bool loadBinary(const std::string& filename, std::vector<float>& data, size_t expected_size) {
