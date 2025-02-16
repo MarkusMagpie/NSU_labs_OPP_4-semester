@@ -92,4 +92,4 @@ int main() {
     return 0;
 }
 
-// компилируй так: g++ -fopenmp -O1 -o parallel2 parallel2.cpp
+// компилируй так: g++ -fopenmp -O3 -o parallel2 parallel2.cpp

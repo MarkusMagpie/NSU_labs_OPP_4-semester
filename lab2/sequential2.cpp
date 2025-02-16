@@ -74,9 +74,6 @@ int main() {
     std::vector<float> vector_b(N);
     std::vector<float> vector_x(N, 0.f); // инициализируем вектор_x нулями
 
-    // std::vector<float> correct_x(N);
-    // loadBinary("vecX.bin", vector_x, N);
-
     if (!loadBinary("matA.bin", matrix_a, N * N) ||
         !loadBinary("vecB.bin", vector_b, N)) {
         return 0;
@@ -89,9 +86,7 @@ int main() {
 
     // double diff = 0;
     // for (int i = 0; i < N; ++i) {
-    //     for (int j = 0; j < N; ++j) {
-    //         diff += (vector_x[i] - correct_x[i]) * (vector_x[i] - correct_x[i]);
-    //     }
+    //     diff += (vector_x[i] - correct_x[i]) * (vector_x[i] - correct_x[i]);
     // }
     // diff = std::sqrt(diff);
     // std::cout << "diff = " << diff << std::endl;

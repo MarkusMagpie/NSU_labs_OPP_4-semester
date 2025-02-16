@@ -64,12 +64,11 @@ int main() {
     std::vector<float> matrix_a(N * N);
     std::vector<float> vector_b(N);
     std::vector<float> vector_x(N, 0.f); // инициализируем вектор_x нулями
-
-    // std::vector<float> correct_x(N);
-    // loadBinary("vecX.bin", vector_x, N);
+    std::vector<float> correct_x(N);
 
     if (!loadBinary("matA.bin", matrix_a, N * N) ||
-        !loadBinary("vecB.bin", vector_b, N)) {
+        !loadBinary("vecB.bin", vector_b, N) ||
+        !loadBinary("vecX.bin", correct_x, N)) {
         return 0;
     } // ошибка при загрузке
 
@@ -82,9 +81,7 @@ int main() {
 
     // double diff = 0;
     // for (int i = 0; i < N; ++i) {
-    //     for (int j = 0; j < N; ++j) {
-    //         diff += (vector_x[i] - correct_x[i]) * (vector_x[i] - correct_x[i]);
-    //     }
+    //     diff += (vector_x[i] - correct_x[i]) * (vector_x[i] - correct_x[i]);
     // }
     // diff = std::sqrt(diff);
     // std::cout << "diff = " << diff << std::endl;
@@ -94,4 +91,4 @@ int main() {
     return 0;
 }
 
-// компилируй так: g++ -fopenmp -O1 -o parallel1 parallel1.cpp
+// компилируй так: g++ -fopenmp -O3 -o parallel1 parallel1.cpp
