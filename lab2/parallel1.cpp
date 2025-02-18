@@ -64,11 +64,10 @@ int main() {
     std::vector<float> matrix_a(N * N);
     std::vector<float> vector_b(N);
     std::vector<float> vector_x(N, 0.f); // инициализируем вектор_x нулями
-    std::vector<float> correct_x(N);
+    // std::vector<float> correct_x(N);
 
     if (!loadBinary("matA.bin", matrix_a, N * N) ||
-        !loadBinary("vecB.bin", vector_b, N) ||
-        !loadBinary("vecX.bin", correct_x, N)) {
+        !loadBinary("vecB.bin", vector_b, N)) {
         return 0;
     } // ошибка при загрузке
 

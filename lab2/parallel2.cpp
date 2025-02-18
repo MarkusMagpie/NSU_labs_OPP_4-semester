@@ -34,6 +34,7 @@ void iterate(std::vector<float>& matrix_a, std::vector<float>& vector_b, std::ve
     }
     b_norm = std::sqrt(b_norm);
 
+    // уже shared - по умолчанию - вне параллельного региона
     bool stop = false;
     float current_norm, local_norm;
 
