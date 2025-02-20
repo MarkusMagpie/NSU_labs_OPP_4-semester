@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-threads = [1, 2, 4, 6, 8]
+threads = [1, 2, 4, 6, 8, 12, 14, 16, 18, 20]
 
 def parse_results(filename):
     times = []
@@ -15,7 +15,6 @@ def parse_results(filename):
             times.append(time)
     return times
 
-# Основная функция
 def main():
     results_file1 = "results1.txt"
     results_file2 = "results2.txt"
@@ -24,7 +23,7 @@ def main():
     times2 = parse_results(results_file2)
 
     if len(times1) != len(threads) or len(times2) != len(threads):
-        print("хуйня")
+        print("неправильно")
         return
 
     # вычисляю speedup и эффективность
