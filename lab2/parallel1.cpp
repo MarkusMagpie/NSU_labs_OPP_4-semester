@@ -27,18 +27,19 @@ bool loadBinary(const std::string& filename, std::vector<float>& data, size_t ex
     return true;
 }
 
-void iterate(std::vector<float>& matrix_a, std::vector<float>& vector_b, std::vector<float>& vector_x, int& iterations_count) {
+void iterate(std::vector<float>& matrix_a, std::vector<float>& vector_b, std::vector<float>& vector_x, int iterations_count) {
     float b_norm = 0;
     for (int i = 0; i < N; ++i) {
         b_norm += vector_b[i] * vector_b[i];
     }
     b_norm = std::sqrt(b_norm);
-    
+
     float current_norm;
+    std::vector<float> diffs(N, 0.0f); // остатки каждой строки матрицы сохраняем в этот вектор
 
     for (; iterations_count < MAX_ITERATIONS; ++iterations_count) {
         current_norm = 0;
-
+        
         // параллелизируем цикл по строкам матрицы
         // каждый поток обрабатывает разные строки (по индексу i) независимо
         #pragma omp parallel for reduction(+ : current_norm)
@@ -47,15 +48,18 @@ void iterate(std::vector<float>& matrix_a, std::vector<float>& vector_b, std::ve
             for (int j = 0; j < N; ++j) {
                 sum += matrix_a[i * N + j] * vector_x[j];
             }
-            vector_x[i] -= TAU * sum;
+            diffs[i] = sum;
             current_norm += sum * sum;
         }
 
         float rel_error = std::sqrt(current_norm) / b_norm;
-        // std::cout << "iteration: " << iterations_count << std::endl;
+        // std::cout << "iteration: " << iterations_count << "; rel_error: " << rel_error << std::endl;
         if (rel_error < EPSILON) {
-            // std::cout << "rel_error = " << rel_error << " ; ";
             break;
+        }
+
+        for (int i = 0; i < N; ++i) {
+            vector_x[i] -= TAU * diffs[i];
         }
     }
 }

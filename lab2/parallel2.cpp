@@ -37,18 +37,19 @@ void iterate(std::vector<float>& matrix_a, std::vector<float>& vector_b, std::ve
     // уже shared - по умолчанию - вне параллельного региона
     bool stop = false;
     float current_norm, local_norm;
+    std::vector<float> diffs(N, 0.0f);
 
     #pragma omp parallel 
     {
         while (!stop) {
             local_norm = 0.f;
-            #pragma omp for schedule(dynamic) reduction(+ : local_norm)
+            #pragma omp for schedule(static) reduction(+ : local_norm)
             for (int i = 0; i < N; ++i) {
                 float sum = -vector_b[i];
                 for (int j = 0; j < N; ++j) {
                     sum += matrix_a[i * N + j] * vector_x[j];
                 }
-                vector_x[i] -= TAU * sum;
+                diffs[i] = sum;
                 local_norm += sum * sum;
             }
 
@@ -63,6 +64,10 @@ void iterate(std::vector<float>& matrix_a, std::vector<float>& vector_b, std::ve
                 double rel_error = std::sqrt(current_norm) / b_norm;
                 if (rel_error < EPSILON) {
                     stop = true;
+                }
+
+                for (int i = 0; i < N; ++i) {
+                    vector_x[i] -= TAU * diffs[i];
                 }
             }
             #pragma omp barrier // синхронизация

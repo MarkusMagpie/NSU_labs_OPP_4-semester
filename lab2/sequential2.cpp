@@ -49,15 +49,18 @@ void iterate(std::vector<float>& matrix_a, std::vector<float>& vector_b, std::ve
     b_norm = std::sqrt(b_norm);
 
     float current_norm;
+    std::vector<float> diffs(N, 0.0f); // остатки каждой строки матрицы сохраняем в этот вектор
+
     for (; iterations_count < MAX_ITERATIONS; ++iterations_count) {
         current_norm = 0;
+        
 
         for (int i = 0; i < N; ++i) {
             float sum = -vector_b[i];
             for (int j = 0; j < N; ++j) {
                 sum += matrix_a[i * N + j] * vector_x[j];
             }
-            vector_x[i] -= TAU * sum;
+            diffs[i] = sum;
             current_norm += sum * sum;
         }
 
@@ -65,6 +68,10 @@ void iterate(std::vector<float>& matrix_a, std::vector<float>& vector_b, std::ve
         // std::cout << "iteration: " << iterations_count << "; rel_error: " << rel_error << std::endl;
         if (rel_error < EPSILON) {
             break;
+        }
+
+        for (int i = 0; i < N; ++i) {
+            vector_x[i] -= TAU * diffs[i];
         }
     }
 }
