@@ -38,7 +38,7 @@ void iterate(std::vector<float>& matrix_a, std::vector<float>& vector_b, std::ve
     std::vector<float> diffs(local_N, 0.0f); // остатки каждой строки матрицы сохраняем в этот вектор
 
     bool run = true;
-    while (run) {
+    for (; iterations_count < MAX_ITERATIONS; ++iterations_count) {
         float local_norm = 0.0f;
         
         for (int i = 0; i < local_N; ++i) {
@@ -54,12 +54,12 @@ void iterate(std::vector<float>& matrix_a, std::vector<float>& vector_b, std::ve
         float global_norm;
         MPI_Allreduce(&local_norm, &global_norm, 1, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
         float rel_error = std::sqrt(global_norm) / b_norm;
-        std::cout << "iteration: " << iterations_count << "; rel_error: " << rel_error << std::endl;
-        if (rel_error < EPSILON || ++iterations_count >= MAX_ITERATIONS) {
-            run = false;
+        // std::cout << "iteration: " << iterations_count << "; rel_error: " << rel_error << std::endl;
+        if (rel_error < EPSILON) {
+            return;
         }
 
-        for (int i = 0; i < N; ++i) {
+        for (int i = 0; i < local_N; ++i) {
             int global_i = local_offset + i;
             vector_x[global_i] -= TAU * diffs[i];
         }
@@ -106,18 +106,13 @@ int main(int argc, char** argv) {
     //-----------------------------------------------------------------------------------------------------
 
     std::vector<float> matrix_a(N * N);
-    std::vector<float> vector_b(N);
-    std::vector<float> vector_x(N, 0.f); 
+    std::vector<float> vector_b(N); // 
+    std::vector<float> vector_x(N, 0.f); // глобальный вектор x
 
     if (!loadBinary("matA.bin", matrix_a, N * N) ||
         !loadBinary("vecB.bin", vector_b, N)) {
         MPI_Finalize();
         return 0;
-    }
-
-    if (rank == 0) {
-        MPI_Bcast(matrix_a.data(), N * N, MPI_FLOAT, 0, MPI_COMM_WORLD);
-        MPI_Bcast(vector_b.data(), N, MPI_FLOAT, 0, MPI_COMM_WORLD);
     }
 
     int iterations_count = 0;
@@ -126,14 +121,19 @@ int main(int argc, char** argv) {
     iterate(matrix_a, vector_b, vector_x, iterations_count, local_N, local_offset, recvcounts, offsets);
     auto end_time = MPI_Wtime();
 
+    MPI_Barrier(MPI_COMM_WORLD); // здесь синхронизация чтобы вывод в консоль был ПОСЛЕДНЕЙ строкой
     if (rank == 0) {
-        std::cout << "Time: " << end_time - start_time << "; iterations: " << iterations_count  << std::endl;
+        std::cout << "time: " << end_time - start_time << "; iterations: " << iterations_count  << std::endl;
     }
 
     MPI_Finalize(); // завершаем MPI (закрыли все MPI процесы, ликвидация всех областей связи)
     return 0;
 }
 
-/* компилируй так:  mpic++ -O3 -o parallel1 parallel1.cpp
-                    mpirun ./parallel1
+/* 
+компилируй так: mpic++ -O3 -o parallel1 parallel1.cpp
+                mpirun ./parallel1
+
+дебаг:          mpic++ -O3 -o parallel1 parallel1.cpp -g
+                mpirun -np 4 xterm -fa 'Monospace' -fs 14 -e gdb -ex run parallel1
 */ 
