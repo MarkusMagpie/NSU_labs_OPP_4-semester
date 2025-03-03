@@ -67,6 +67,9 @@ int main(int argc, char **argv) {
         std::cout << "Неверное число параметров" << std::endl;
         return 0;
     }
+    
+    int runs = 3;
+    float best_time = std::numeric_limits<float>::max();
 
     Params params;
     params.size = std::stoi(argv[1]);
@@ -81,23 +84,29 @@ int main(int argc, char **argv) {
         arr[i] = static_cast<float>(rand()) / RAND_MAX * 10000.0f;
     }
     
-    auto start = std::chrono::high_resolution_clock::now();
-    // параллельная область, внутри которой единственный поток начинает сортировку
-    #pragma omp parallel
-    {
-        #pragma omp single
+    for (int i = 0; i < runs; i++) {
+        auto start = std::chrono::high_resolution_clock::now();
+        // параллельная область, внутри которой единственный поток начинает сортировку
+        #pragma omp parallel
         {
-            quicksort_parallel(arr.data(), 0, params.size - 1, params.threshold);
+            #pragma omp single
+            {
+                quicksort_parallel(arr.data(), 0, params.size - 1, params.threshold);
+            }
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = end - start;
+
+        // if (!is_sorted(arr, 0, size)) {
+        //     std::cout << "неправильно отсортировал" << std::endl;
+        // }
+
+        if (elapsed.count() < best_time) {
+            best_time = elapsed.count();
         }
     }
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = end - start;
-    
-    // if (!is_sorted(arr, 0, size)) {
-    //     std::cout << "неправильно отсортировал" << std::endl;
-    // }
 
-    std::cout << params.size << "," << params.threshold << "," << params.num_threads << "," << elapsed.count() << "\n";
+    std::cout << params.size << "," << params.threshold << "," << params.num_threads << "," << best_time << "\n";
     
     return 0;
 }
