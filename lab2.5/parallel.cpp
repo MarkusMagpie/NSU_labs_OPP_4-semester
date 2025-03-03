@@ -34,7 +34,7 @@ void quicksort_parallel(float *v, int low, int high, int threshold) {
     int i, j;
     partition(v, low, high, i, j);
     
-    // если размер диапазона или его частей меньше порога, выполняем рекурсивно без создания задачи
+    // массив и подмассивы разделенные пивотом должны быть >= threshhold ВСЕ чтобы использовать задачи
     if ((high - low) < threshold || (j - low < threshold || high - i < threshold)) {
         if (low < j)
             quicksort_parallel(v, low, j, threshold);
@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
         return 0;
     }
     
-    int runs = 3;
+    int runs = 5;
     float best_time = std::numeric_limits<float>::max();
 
     Params params;

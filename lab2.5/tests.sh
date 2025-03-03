@@ -13,7 +13,7 @@ echo "2 - показать зависимость времени сортиро�
 echo "size,threshold,threads,time" > results2.csv
 fixed_size=100000000 # надо большой (1e8 - примерно 10 секунд при 1 треде)
 fixed_threshold=1000
-for threads in 1 2 4 8 12 16; do
+for threads in 1 2 4 8 10 12 14 16; do
     ./parallel $fixed_size $fixed_threshold $threads >> results2.csv
 done
 
