@@ -35,24 +35,17 @@ void quicksort_parallel(float *v, int low, int high, int threshold) {
     partition(v, low, high, i, j);
     
     // массив и подмассивы разделенные пивотом должны быть >= threshhold ВСЕ чтобы использовать задачи
-    if ((high - low) < threshold || (j - low < threshold || high - i < threshold)) {
-        if (low < j)
-            quicksort_parallel(v, low, j, threshold);
-        if (i < high)
-            quicksort_parallel(v, i, high, threshold);
-    } else {
-        // сортировка левой части
-        #pragma omp task shared(v) firstprivate(low, j)
-        {
-            quicksort_parallel(v, low, j, threshold);
-        }
-        #pragma omp task shared(v) firstprivate(i, high)
-        {
-            quicksort_parallel(v, i, high, threshold);
-        }
-
-        #pragma omp taskwait
+    #pragma omp task shared(v) firstprivate(low, j, threshold) if((j - low) >= threshold)
+    {
+        quicksort_parallel(v, low, j, threshold);
     }
+    
+    #pragma omp task shared(v) firstprivate(i, high, threshold) if((high - i) >= threshold)
+    {
+        quicksort_parallel(v, i, high, threshold);
+    }
+
+    // #pragma omp taskwait
 }
 
 bool is_sorted(float *v, int low, int high) {
@@ -97,13 +90,13 @@ int main(int argc, char **argv) {
         auto end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = end - start;
 
-        // if (!is_sorted(arr, 0, size)) {
-        //     std::cout << "неправильно отсортировал" << std::endl;
-        // }
-
         if (elapsed.count() < best_time) {
             best_time = elapsed.count();
         }
+    }
+
+    if (!is_sorted(arr.data(), 0, params.size)) {
+        std::cout << "неправильно отсортировал" << std::endl;
     }
 
     std::cout << params.size << "," << params.threshold << "," << params.num_threads << "," << best_time << "\n";
