@@ -11,122 +11,118 @@ const double EPSILON = 1e-2;
 const double TAU = -0.01;
 const int N = 2500;
 
-bool loadBinary(const std::string& filename, std::vector<float>& data, size_t size) {
+bool loadBinaryPart(const std::string& filename, std::vector<float>& data, size_t offset, size_t count) {
     std::ifstream file(filename, std::ios::binary);
     if (!file) {
         std::cout << "ошибка при открытии файла: " << filename << std::endl;
         return false;
     }
+    
+    // НОВОЕ - перемещаю указатель на offset * sizeof(float)
+    file.seekg(offset * sizeof(float), std::ios::beg);
+    data.resize(count);
 
-    file.read(reinterpret_cast<char*>(data.data()), size * sizeof(float));
+    file.read(reinterpret_cast<char*>(data.data()), count * sizeof(float));
     if (!file) {
         std::cerr << "ошибка чтения файла: " << filename << std::endl;
         return false;
     }
 
-    return true;
+    return file.good(); // https://cplusplus.com/reference/ios/ios/good/
 }
 
-void iterate(std::vector<float>& matrix_a, std::vector<float>& vector_b, std::vector<float>& vector_x, int& iterations_count,
-            int local_N, int local_offset, std::vector<int>& recvcounts, std::vector<int>& offsets) {
-    float b_norm = 0;
-    for (int i = 0; i < N; ++i) {
-        b_norm += vector_b[i] * vector_b[i];
+void iterate(const std::vector<float>& local_a, std::vector<float>& b, std::vector<float>& x, 
+             int& iterations_count, int local_n, int offset, const std::vector<int>& recvcounts, 
+             const std::vector<int>& displs) {
+    // только процесс 0 считает норму b и отправляет ее всем
+    float b_norm = 0.0f;
+    if (offset == 0) {
+        for (float val : b) {
+            b_norm += val * val;
+        }
+        b_norm = std::sqrt(b_norm);
     }
-    b_norm = std::sqrt(b_norm);
+    MPI_Bcast(&b_norm, 1, MPI_FLOAT, 0, MPI_COMM_WORLD);
 
-    std::vector<float> diffs(local_N, 0.0f); // остатки каждой строки матрицы сохраняем в этот вектор
+    std::vector<float> local_diffs(local_n); // остатки каждой строки матрицы сохраняем в этот вектор
+    std::vector<float> global_diffs(N);
 
-    bool run = true;
     for (; iterations_count < MAX_ITERATIONS; ++iterations_count) {
         float local_norm = 0.0f;
-        
-        for (int i = 0; i < local_N; ++i) {
-            int global_i = local_offset + i;
-            float sum = -vector_b[global_i];
-            for (int j = 0; j < N; ++j) {
-                sum += matrix_a[global_i * N + j] * vector_x[j];
-            }
-            diffs[i] = sum;
+        for (int i = 0; i < local_n; ++i) {
+            float sum = -b[offset + i];
+            for (int j = 0; j < N; ++j)
+                sum += local_a[i * N + j] * x[j];
+            local_diffs[i] = sum;
             local_norm += sum * sum;
         }
 
-        float global_norm;
-        MPI_Allreduce(&local_norm, &global_norm, 1, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
-        float rel_error = std::sqrt(global_norm) / b_norm;
+        // сбор local_diffs на всех процессах
+        MPI_Allgatherv(local_diffs.data(), local_n, MPI_FLOAT,
+                       global_diffs.data(), recvcounts.data(), displs.data(), MPI_FLOAT, MPI_COMM_WORLD);
+
+        // собираю суммой нормы на всех процессах и проверяю условие выхода из итерационного цикла
+        float total_norm;
+        MPI_Allreduce(&local_norm, &total_norm, 1, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+        float rel_error = std::sqrt(total_norm) / b_norm;
         // std::cout << "iteration: " << iterations_count << "; rel_error: " << rel_error << std::endl;
-        if (rel_error < EPSILON) {
-            return;
+        if (rel_error < EPSILON) { 
+            break;
         }
 
-        for (int i = 0; i < local_N; ++i) {
-            int global_i = local_offset + i;
-            vector_x[global_i] -= TAU * diffs[i];
+        for (int j = 0; j < N; ++j) {
+            x[j] -= TAU * global_diffs[j];
         }
-        // сборка блоков x от всех процессов в один; получатели - все процессы вообще, но: 
-        // recvcounts.data() - массив, где каждому процессу говорим сколько элементов он отправил
-        // offsets.data() - массив, где каждому процессу указано его смещение
-        MPI_Allgatherv(vector_x.data() + local_offset, local_N, MPI_FLOAT, 
-                        vector_x.data(), recvcounts.data(), offsets.data(), MPI_FLOAT, MPI_COMM_WORLD);
-
     }
 }
 
 int main(int argc, char** argv) {
     MPI_Init(&argc, &argv);
 
-    int rank, num_procs;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);   // номер (ранг) процесса, вызвавшего функцию
-    MPI_Comm_size(MPI_COMM_WORLD, &num_procs); // количчество процессов в области связи коммуникатора MPI_COMM_WORLD 
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank); // номер (ранг) процесса, вызвавшего функцию
+    MPI_Comm_size(MPI_COMM_WORLD, &size); // количчество процессов в области связи коммуникатора MPI_COMM_WORLD 
 
-    //-----------------------------------------------------------------------------------------------------
-    // rows_per_proc - столько строк получил бы каждый процесс если бы распределение было ровным
-    int rows_per_proc = N / num_procs;
-    // остаток от деления
-    int remainder = N % num_procs;
-    // число строк которое обрабатывает текущий процесс
-    int local_N = rows_per_proc + (rank < remainder ? 1 : 0);
-    // индекс первой строки, которую обрабатывает текущий процесс
-    // либо rank*(rows_per_proc + 1), либо сдвиг с учетом доп строк
-    int local_offset = (rank < remainder) ? rank * (rows_per_proc + 1)
-                                          : remainder * (rows_per_proc + 1) + (rank - remainder) * rows_per_proc;
-    // int local_offset = rank * rows_per_proc + (rank < remainder ? rank : remainder);
-
-    // отдельно создание двух массивов для Allgatherv - модифицированный Allgather
-    // recvcounts[p] – число строк вектора x, обновляемых процессом p
-    // offsets[p] – смещение в итоговом массиве vector_x для данных от процесса p
-    std::vector<int> recvcounts(num_procs), offsets(num_procs);
+    // распределение строк матрицы A между процессами
+    int base = N / size;
+    int rem = N % size;
+    std::vector<int> recvcounts(size), displs(size);
     int offset = 0;
-    for (int p = 0; p < num_procs; p++) {
-        int rows = rows_per_proc + (p < remainder ? 1 : 0);
-        recvcounts[p] = rows;
-        offsets[p] = offset;
-        offset += rows;
+    for (int p = 0; p < size; ++p) {
+        recvcounts[p] = base + (p < rem);
+        displs[p] = offset;
+        offset += recvcounts[p];
     }
-    //-----------------------------------------------------------------------------------------------------
+    int local_n = recvcounts[rank]; // число строк которое обрабатывает текущий процесс
+    int local_offset = displs[rank]; // индекс первой строки, которую обрабатывает текущий процесс
 
-    std::vector<float> matrix_a(N * N);
-    std::vector<float> vector_b(N); // 
-    std::vector<float> vector_x(N, 0.f); // глобальный вектор x
-
-    if (!loadBinary("matA.bin", matrix_a, N * N) ||
-        !loadBinary("vecB.bin", vector_b, N)) {
+    // загрузка части матрицы A, local_offset и local_n зависят от процечча
+    std::vector<float> local_a(local_n * N);
+    if (!loadBinaryPart("matA.bin", local_a, local_offset * N, local_n * N)) {
         MPI_Finalize();
         return 0;
     }
 
+    // загрузка вектора b и его рассылка 
+    std::vector<float> b(N), x(N, 0.0f);
+    if (rank == 0 && !loadBinaryPart("vecB.bin", b, 0, N)) {
+        MPI_Finalize();
+        return 0;
+    }
+    MPI_Bcast(b.data(), N, MPI_FLOAT, 0, MPI_COMM_WORLD);
+
     int iterations_count = 0;
+    double start = MPI_Wtime();
+    iterate(local_a, b, x, iterations_count, local_n, local_offset, recvcounts, displs);
+    double elapsed = MPI_Wtime() - start;
 
-    auto start_time = MPI_Wtime();
-    iterate(matrix_a, vector_b, vector_x, iterations_count, local_N, local_offset, recvcounts, offsets);
-    auto end_time = MPI_Wtime();
-
-    MPI_Barrier(MPI_COMM_WORLD); // здесь синхронизация чтобы вывод в консоль был ПОСЛЕДНЕЙ строкой
+    // MPI_Barrier(MPI_COMM_WORLD); // здесь синхронизация чтобы вывод в консоль был ПОСЛЕДНЕЙ строкой
+    
     if (rank == 0) {
-        std::cout << "time: " << end_time - start_time << "; iterations: " << iterations_count  << std::endl;
+        std::cout << elapsed << std::endl;
     }
 
-    MPI_Finalize(); // завершаем MPI (закрыли все MPI процесы, ликвидация всех областей связи)
+    MPI_Finalize();
     return 0;
 }
 
