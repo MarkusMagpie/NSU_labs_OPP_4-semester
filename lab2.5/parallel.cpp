@@ -2,6 +2,8 @@
 #include <ctime>
 #include <vector>
 #include <chrono>
+#include <random>
+#include <algorithm>
 
 #include <omp.h>
 
@@ -48,20 +50,13 @@ void quicksort_parallel(float *v, int low, int high, int threshold) {
     // #pragma omp taskwait
 }
 
-bool is_sorted(float *v, int low, int high) {
-    for (int i = 1; i < high; i++) {
-        if (v[i-1] > v[i]) return false;
-    }
-    return true;
-}
-
 int main(int argc, char **argv) {
     if (argc != 4) {
         std::cout << "Неверное число параметров" << std::endl;
         return 0;
     }
     
-    int runs = 5;
+    int runs = 3;
     float best_time = std::numeric_limits<float>::max();
 
     Params params;
@@ -72,9 +67,11 @@ int main(int argc, char **argv) {
     omp_set_num_threads(params.num_threads);
 
     std::vector<float> arr(params.size);
-    srand(static_cast<unsigned int>(time(0))); // устанавливаем значение системных часов в качестве стартового числа
-    for (int i = 0; i < params.size; ++i) {
-        arr[i] = static_cast<float>(rand()) / RAND_MAX * 10000.0f;
+    std::mt19937 gen(100); // если seed одинаковый, то и последовательность рандомных чисел одинаковая при любом запуске
+    std::uniform_real_distribution<float> dis(0.0f, 10000.0f); // настройка равномерного распределения 
+
+    for (auto& elem : arr) {
+        elem = dis(gen); // генератор gen создает случайное число, dis преобразует его в float в диапазоне [0, 10000)
     }
     
     for (int i = 0; i < runs; i++) {
@@ -95,7 +92,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (!is_sorted(arr.data(), 0, params.size)) {
+    if (std::is_sorted(arr.begin(), arr.end())) {
         std::cout << "неправильно отсортировал" << std::endl;
     }
 
