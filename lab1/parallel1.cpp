@@ -31,35 +31,27 @@ bool loadBinaryPart(const std::string& filename, std::vector<float>& data, size_
     return file.good(); // https://cplusplus.com/reference/ios/ios/good/
 }
 
-void iterate(const std::vector<float>& local_a, std::vector<float>& b, std::vector<float>& x, 
+int iterate(const std::vector<float>& local_a, std::vector<float>& b, std::vector<float>& x, 
              int& iterations_count, int local_n, int offset, const std::vector<int>& recvcounts, 
              const std::vector<int>& displs) {
-    // только процесс 0 считает норму b и отправляет ее всем
     float b_norm = 0.0f;
-    if (offset == 0) {
-        for (float val : b) {
-            b_norm += val * val;
-        }
-        b_norm = std::sqrt(b_norm);
+    for (float val : b) {
+        b_norm += val * val;
     }
-    MPI_Bcast(&b_norm, 1, MPI_FLOAT, 0, MPI_COMM_WORLD);
+    b_norm = std::sqrt(b_norm);
 
     std::vector<float> local_diffs(local_n); // остатки каждой строки матрицы сохраняем в этот вектор
-    std::vector<float> global_diffs(N);
 
     for (; iterations_count < MAX_ITERATIONS; ++iterations_count) {
         float local_norm = 0.0f;
         for (int i = 0; i < local_n; ++i) {
             float sum = -b[offset + i];
-            for (int j = 0; j < N; ++j)
+            for (int j = 0; j < N; ++j) {
                 sum += local_a[i * N + j] * x[j];
+            }
             local_diffs[i] = sum;
             local_norm += sum * sum;
         }
-
-        // сбор local_diffs на всех процессах
-        MPI_Allgatherv(local_diffs.data(), local_n, MPI_FLOAT,
-                       global_diffs.data(), recvcounts.data(), displs.data(), MPI_FLOAT, MPI_COMM_WORLD);
 
         // собираю суммой нормы на всех процессах и проверяю условие выхода из итерационного цикла
         float total_norm;
@@ -70,14 +62,20 @@ void iterate(const std::vector<float>& local_a, std::vector<float>& b, std::vect
             break;
         }
 
-        for (int j = 0; j < N; ++j) {
-            x[j] -= TAU * global_diffs[j];
+        for (int i = 0; i < local_n; ++i) {
+            x[offset + i] -= TAU * local_diffs[i];
         }
+
+        // сбор x на всех процессах
+        MPI_Allgatherv(&x[offset], local_n, MPI_FLOAT, 
+            x.data(), recvcounts.data(), displs.data(), MPI_FLOAT, MPI_COMM_WORLD);
     }
+
+    return iterations_count;
 }
 
 int main(int argc, char** argv) {
-    MPI_Init(&argc, &argv);
+    MPI_Init(&argc, &argv); // создаем предопределеннную область связи, содержащую все процессы MPI программы, с ней связывается коммуникатор MPI_COMM_WORLD
 
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank); // номер (ранг) процесса, вызвавшего функцию
@@ -113,13 +111,13 @@ int main(int argc, char** argv) {
 
     int iterations_count = 0;
     double start = MPI_Wtime();
-    iterate(local_a, b, x, iterations_count, local_n, local_offset, recvcounts, displs);
+    iterations_count = iterate(local_a, b, x, iterations_count, local_n, local_offset, recvcounts, displs);
     double elapsed = MPI_Wtime() - start;
 
     // MPI_Barrier(MPI_COMM_WORLD); // здесь синхронизация чтобы вывод в консоль был ПОСЛЕДНЕЙ строкой
     
     if (rank == 0) {
-        std::cout << elapsed << std::endl;
+        std::cout << elapsed << "; " << iterations_count << std::endl;
     }
 
     MPI_Finalize();
