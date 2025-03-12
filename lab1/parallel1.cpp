@@ -31,7 +31,7 @@ bool loadBinaryPart(const std::string& filename, std::vector<float>& data, size_
     return file.good(); // https://cplusplus.com/reference/ios/ios/good/
 }
 
-int iterate(const std::vector<float>& local_a, std::vector<float>& b, std::vector<float>& x, 
+void iterate(const std::vector<float>& local_a, std::vector<float>& b, std::vector<float>& x, 
              int& iterations_count, int local_n, int offset, const std::vector<int>& recvcounts, 
              const std::vector<int>& displs) {
     float b_norm = 0.0f;
@@ -70,8 +70,6 @@ int iterate(const std::vector<float>& local_a, std::vector<float>& b, std::vecto
         MPI_Allgatherv(&x[offset], local_n, MPI_FLOAT, 
             x.data(), recvcounts.data(), displs.data(), MPI_FLOAT, MPI_COMM_WORLD);
     }
-
-    return iterations_count;
 }
 
 int main(int argc, char** argv) {
@@ -111,13 +109,13 @@ int main(int argc, char** argv) {
 
     int iterations_count = 0;
     double start = MPI_Wtime();
-    iterations_count = iterate(local_a, b, x, iterations_count, local_n, local_offset, recvcounts, displs);
+    iterate(local_a, b, x, iterations_count, local_n, local_offset, recvcounts, displs);
     double elapsed = MPI_Wtime() - start;
 
     // MPI_Barrier(MPI_COMM_WORLD); // здесь синхронизация чтобы вывод в консоль был ПОСЛЕДНЕЙ строкой
     
     if (rank == 0) {
-        std::cout << elapsed << "; " << iterations_count << std::endl;
+        std::cout << elapsed << std::endl;
     }
 
     MPI_Finalize();
