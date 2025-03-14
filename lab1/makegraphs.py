@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-threads = [1, 2, 4, 6, 8, 10, 12]
+threads = [1, 2, 4, 6, 8, 10, 12, 14, 16]
 
 def parse_results(filename):
     times = []
