@@ -83,6 +83,7 @@ int main(int argc, char* argv[]) {
     if (col_rank == 0) {
         B.resize(n2 * n3, 1.0);
     }
+    std::cout << "выполнила инициализацию" << std::endl;    
 
     // 7 - распределить матрицу А по горизонтальным полоскам
     // ЛОГИКА: хочу чтобы процессы ВДОЛЬ СТРОК РЕШЕТКИ разобрали блоки матрицы А 
@@ -116,10 +117,10 @@ int main(int argc, char* argv[]) {
 
     // 9 - рассылка данных (стадии вычисления 3-4 из условия)
     std::cout << "приступил к распределению полос матрицы А" << std::endl;
-    MPI_Bcast(local_A.data(), local_n1 * n2, MPI_FLOAT, 0, comm_col);
+    MPI_Bcast(local_A.data(), local_n1 * n2, MPI_FLOAT, col_rank, comm_col);
 
     std::cout << "приступил к распределению полос матрицы B" << std::endl;
-    MPI_Bcast(local_B.data(), n2 * local_n3, MPI_FLOAT, 0, comm_row);
+    MPI_Bcast(local_B.data(), n2 * local_n3, MPI_FLOAT, row_rank, comm_row);
     std::cout << "закончил распределение" << std::endl;
 
     // 10 - локальное умножение подматриц
