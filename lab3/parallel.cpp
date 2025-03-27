@@ -4,6 +4,19 @@
 #include <mpi.h>
 #include <fstream>
 #include <chrono>
+#include <algorithm>
+#include <random>
+
+void fill_matrix(float* matrix, int n1, int n2) {
+    std::mt19937 gen(100); // если seed одинаковый, то и последовательность рандомных чисел одинаковая при любом запуске
+    std::uniform_real_distribution<float> dis(0.0f, 1000.0f); // настройка равномерного распределения 
+
+    for (int i = 0; i < n1; ++i) {
+        for (int j = 0; j < n2; ++j) {
+            matrix[i * n2 + j] = dis(gen); // генератор gen создает случайное число, dis преобразует его в float в диапазоне [0, 10000)
+        }
+    }
+}
 
 void mult_matrix(float* local_A, float* local_B, float* local_C, int local_n1, int n2, int local_n3) {
     for (int i = 0; i < local_n1; ++i) {
@@ -13,6 +26,17 @@ void mult_matrix(float* local_A, float* local_B, float* local_C, int local_n1, i
             }
         }
     }
+}
+
+void print_matrix(float* matrix, int rows, int cols) {
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            std::cout << matrix[i * cols + j] << " ";
+        }
+        std::cout << std::endl;
+    }
+
+    std::cout << std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -28,11 +52,11 @@ int main(int argc, char* argv[]) {
     int p1 = dims[0], p2 = dims[1]; // параметры решетки 
     
     // размеры матриц (должны быть кратны p1 и p2)
-    int n1 = 100, n2 = 100, n3 = 100;
+    int n1 = 4, n2 = 4, n3 = 4;
 
     if (n1 % p1 != 0 || n3 % p2 != 0) {
         if (rank == 0) {
-            std::cout << "Размеры матриц должны быть кратны числу процессов:" << std::endl;
+            std::cout << "размеры матриц должны быть кратны числу процессов:" << std::endl;
             std::cout << "n1 = " << n1 << ", p1 = " << p1 << std::endl;
             std::cout << "n3 = " << n3 << ", p2 = " << p2 << std::endl;
         }
@@ -79,11 +103,22 @@ int main(int argc, char* argv[]) {
 
     if (row_rank == 0) {                // если процесс в подкоммуникаторе строчных процессов равен нулю, то делаю resize
         A.resize(n1 * n2, 1.0);
+        fill_matrix(A.data(), n1, n2);
     }
     if (col_rank == 0) {
         B.resize(n2 * n3, 1.0);
+        fill_matrix(B.data(), n2, n3);
+    }    
+
+    if (row_rank == 0) {
+        std::cout << "матрица А:" << std::endl;
+        print_matrix(A.data(), n1, n2);
     }
-    std::cout << "выполнила инициализацию" << std::endl;    
+    std::cout << std::endl;
+    if (col_rank == 0) {
+        std::cout << "матрица B:" << std::endl;
+        print_matrix(B.data(), n2, n3);
+    }
 
     // 7 - распределить матрицу А по горизонтальным полоскам
     // ЛОГИКА: хочу чтобы процессы ВДОЛЬ СТРОК РЕШЕТКИ разобрали блоки матрицы А 
@@ -116,18 +151,15 @@ int main(int argc, char* argv[]) {
     }
 
     // 9 - рассылка данных (стадии вычисления 3-4 из условия)
-    std::cout << "приступил к распределению полос матрицы А" << std::endl;
     MPI_Bcast(local_A.data(), local_n1 * n2, MPI_FLOAT, col_rank, comm_col);
-
-    std::cout << "приступил к распределению полос матрицы B" << std::endl;
     MPI_Bcast(local_B.data(), n2 * local_n3, MPI_FLOAT, row_rank, comm_row);
-    std::cout << "закончил распределение" << std::endl;
 
     // 10 - локальное умножение подматриц
     std::vector<float> local_C(local_n1 * local_n3, 0.0);
     auto start = std::chrono::high_resolution_clock::now();
     mult_matrix(local_A.data(), local_B.data(), local_C.data(), local_n1, n2, local_n3);
     auto end = std::chrono::high_resolution_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
     // 11 - сборака результатов с учетом смещений
     std::vector<float> C;
@@ -150,7 +182,8 @@ int main(int argc, char* argv[]) {
 
     // 12 - вывод 
     if (rank == 0) {
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        std::cout << "матрица C:" << std::endl;
+        print_matrix(C.data(), n1, n3);
         std::cout << elapsed.count() << std::endl;
     }
 
@@ -168,5 +201,5 @@ int main(int argc, char* argv[]) {
                 mpirun  -np 4 ./parallel
 
 дебаг:          mpic++ -O3 -o parallel parallel.cpp -g
-                mpirun -np 4 xterm -fa 'Monospace' -fs 14 -e gdb -ex run parallel1
+                mpirun -np 4 xterm -fa 'Monospace' -fs 14 -e gdb -ex run parallel
 */ 
