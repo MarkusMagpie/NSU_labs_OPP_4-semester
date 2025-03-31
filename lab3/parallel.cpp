@@ -9,21 +9,11 @@
 
 void fill_matrix(float* matrix, int n1, int n2) {
     std::mt19937 gen(100); // если seed одинаковый, то и последовательность рандомных чисел одинаковая при любом запуске
-    std::uniform_real_distribution<float> dis(0.0f, 1000.0f); // настройка равномерного распределения 
+    std::uniform_real_distribution<float> dis(0.0f, 100.0f); // настройка равномерного распределения 
 
     for (int i = 0; i < n1; ++i) {
         for (int j = 0; j < n2; ++j) {
             matrix[i * n2 + j] = dis(gen); // генератор gen создает случайное число, dis преобразует его в float в диапазоне [0, 10000)
-        }
-    }
-}
-
-void mult_matrix(float* local_A, float* local_B, float* local_C, int local_n1, int n2, int local_n3) {
-    for (int i = 0; i < local_n1; ++i) {
-        for (int k = 0; k < n2; ++k) {
-            for (int j = 0; j < local_n3; ++j) {
-                local_C[i * local_n3 + j] += local_A[i * n2 + k] * local_B[k * local_n3 + j];
-            }
         }
     }
 }
@@ -39,19 +29,29 @@ void print_matrix(float* matrix, int rows, int cols) {
     std::cout << std::endl;
 }
 
+void mult_matrix(float* local_A, float* local_B, float* local_C, int local_n1, int n2, int local_n3) {
+    for (int i = 0; i < local_n1; ++i) {
+        for (int k = 0; k < n2; ++k) {
+            for (int j = 0; j < local_n3; ++j) {
+                local_C[i * local_n3 + j] += local_A[i * n2 + k] * local_B[k * local_n3 + j];
+            }
+        }
+    }
+}
+
 int main(int argc, char* argv[]) {
     MPI_Init(&argc, &argv); // создаем предопределеннную область связи, содержащую все процессы MPI программы, с ней связывается коммуникатор MPI_COMM_WORLD
 
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank); // номер (ранг) процесса, вызвавшего функцию
-    MPI_Comm_size(MPI_COMM_WORLD, &size); // количчество процессов в области связи коммуникатора MPI_COMM_WORLD 
+    MPI_Comm_size(MPI_COMM_WORLD, &size); // количество процессов в области связи коммуникатора MPI_COMM_WORLD 
 
     // 1 - автоматическое определение размеров решетки
     int dims[2] = {0, 0};
     MPI_Dims_create(size, 2, dims);
     int p1 = dims[0], p2 = dims[1]; // параметры решетки 
     
-    // размеры матриц (должны быть кратны p1 и p2)
+    // размеры матриц
     int n1 = 4, n2 = 4, n3 = 4;
 
     if (n1 % p1 != 0 || n3 % p2 != 0) {
@@ -72,7 +72,7 @@ int main(int argc, char* argv[]) {
     // https://www.opennet.ru/docs/RUS/mpi-1/node129.html
     MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, 0, &comm_grid);
 
-    // 3 - получение координат текущего процесса
+    // 3 - перевод ранга в координаты декартовой решетки
     int coords[2];
     // определение декартовых координат процесса по его рангу rank в группе
     MPI_Cart_coords(comm_grid, rank, 2, coords);
@@ -89,39 +89,28 @@ int main(int argc, char* argv[]) {
     int local_n1 = n1 / p1;
     int local_n3 = n3 / p2;
 
-    // std::vector<float> A, B;
-    // if (rank == 0) {
-    //     A.resize(n1 * n2, 1.0);
-    //     B.resize(n2 * n3, 1.0);
-    // } 
-
-    // 6 - инициализация данных на нулеввых процессах подкоммуникаторов
+    // 6 - инициализация матриц
     std::vector<float> A, B;
-    int row_rank, col_rank;
-    MPI_Comm_rank(comm_row, &row_rank); // получаю ранг процесса, вызвавшего функцию
-    MPI_Comm_rank(comm_col, &col_rank);
 
-    if (row_rank == 0) {                // если процесс в подкоммуникаторе строчных процессов равен нулю, то делаю resize
-        A.resize(n1 * n2, 1.0);
+    // матрица A создается в процессах с y == 0 (первый столбец)
+    if (y == 0) {
+        A.resize(n1 * n2);
         fill_matrix(A.data(), n1, n2);
     }
-    if (col_rank == 0) {
-        B.resize(n2 * n3, 1.0);
+    // матрица B создается в процессах с x == 0 (первая строка)
+    if (x == 0) {
+        B.resize(n2 * n3);
         fill_matrix(B.data(), n2, n3);
     }    
 
-    if (row_rank == 0) {
+    if (rank == 0) {
         std::cout << "матрица А:" << std::endl;
         print_matrix(A.data(), n1, n2);
-    }
-    std::cout << std::endl;
-    if (col_rank == 0) {
         std::cout << "матрица B:" << std::endl;
         print_matrix(B.data(), n2, n3);
     }
-
     // 7 - распределить матрицу А по горизонтальным полоскам
-    // ЛОГИКА: хочу чтобы процессы ВДОЛЬ СТРОК РЕШЕТКИ разобрали блоки матрицы А 
+    // ЛОГИКА: хочу чтобы процессы ВДОЛЬ СТРОК РЕШЕТКИ разобрали блоки матрицы А local_n1 * n2
     // ИЗ УСЛОВИЯ: Матрица А распределяется по горизонтальным полосам вдоль координаты (x,0).
     std::vector<float> local_A(local_n1 * n2);
     MPI_Scatter(A.data(), local_n1 * n2, MPI_FLOAT, 
@@ -144,27 +133,26 @@ int main(int argc, char* argv[]) {
     MPI_Type_commit(&column_type);
 
     std::vector<float> local_B(n2 * local_n3);
-    if (col_rank == 0) {
+    if (x == 0) {
         MPI_Scatter(B.data(), 1, column_type,
                     local_B.data(), n2 * local_n3, MPI_FLOAT,
                     0, comm_col);
     }
 
-    // 9 - рассылка данных (стадии вычисления 3-4 из условия)
-    MPI_Bcast(local_A.data(), local_n1 * n2, MPI_FLOAT, col_rank, comm_col);
-    MPI_Bcast(local_B.data(), n2 * local_n3, MPI_FLOAT, row_rank, comm_row);
+    // 9 - рассылка данных (стадии вычисления 3-4 из условия) 
+    // local_A рассылаю по столбцам, local_B по строкам
+    MPI_Bcast(local_A.data(), local_n1 * n2, MPI_FLOAT, 0, comm_col);
+    MPI_Bcast(local_B.data(), n2 * local_n3, MPI_FLOAT, 0, comm_row);
 
     // 10 - локальное умножение подматриц
     std::vector<float> local_C(local_n1 * local_n3, 0.0);
-    auto start = std::chrono::high_resolution_clock::now();
     mult_matrix(local_A.data(), local_B.data(), local_C.data(), local_n1, n2, local_n3);
-    auto end = std::chrono::high_resolution_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-    // 11 - сборака результатов с учетом смещений
+    // 11 - сборака результатов вычислений подматриц local_C в матрицу C с учетом смещений
     std::vector<float> C;
-    std::vector<int> recvcounts(size, local_n1 * local_n3); // массив количества элементов для каждого процесса в С
-    std::vector<int> displs(size);                          // массив смещений для каждого процесса в С (ранг - смещение)
+    std::vector<int> recvcounts(size, local_n1 * local_n3); // массив количества элементов для каждой подматрицы в С
+    std::vector<int> displs(size);                          // массив смещений для каждой подматрицы в С (ранг - смещение)
+    
     for (int i = 0; i < p1; ++i) {
         for (int j = 0; j < p2; ++j) {
             int global_rank;
@@ -182,9 +170,8 @@ int main(int argc, char* argv[]) {
 
     // 12 - вывод 
     if (rank == 0) {
-        std::cout << "матрица C:" << std::endl;
+        std::cout << "матрица C после сборки подматриц:" << std::endl;
         print_matrix(C.data(), n1, n3);
-        std::cout << elapsed.count() << std::endl;
     }
 
     MPI_Type_free(&column_type);
