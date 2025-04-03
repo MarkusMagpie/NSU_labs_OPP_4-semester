@@ -13,15 +13,15 @@ void fill_matrix(float* matrix, int n1, int n2) {
 
     for (int i = 0; i < n1; ++i) {
         for (int j = 0; j < n2; ++j) {
-            matrix[i * n2 + j] = dis(gen); // генератор gen создает случайное число, dis преобразует его в float в диапазоне [0, 10000)
+            matrix[i * n2 + j] = dis(gen); // генератор gen создает случайное число, dis преобразует его в float в диапазоне [0, 100)
         }
     }
 }
 
-void print_matrix(float* matrix, int rows, int cols) {
-    for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < cols; ++j) {
-            std::cout << matrix[i * cols + j] << " ";
+void print_matrix(float* matrix, int n1, int n2) {
+    for (int i = 0; i < n1; ++i) {
+        for (int j = 0; j < n2; ++j) {
+            std::cout << matrix[i * n2 + j] << " ";
         }
         std::cout << std::endl;
     }
@@ -92,33 +92,30 @@ int main(int argc, char* argv[]) {
     // 6 - инициализация матриц
     std::vector<float> A, B;
 
-    // матрица A создается в процессах с y == 0 (первый столбец)
-    if (y == 0) {
-        A.resize(n1 * n2);
-        fill_matrix(A.data(), n1, n2);
-    }
-    // матрица B создается в процессах с x == 0 (первая строка)
-    if (x == 0) {
-        B.resize(n2 * n3);
-        fill_matrix(B.data(), n2, n3);
-    }    
-
     if (rank == 0) {
-        std::cout << "матрица А:" << std::endl;
+        A.resize(n1 * n2);
+        B.resize(n2 * n3);
+        fill_matrix(A.data(), n1, n2);
+        fill_matrix(B.data(), n2, n3);
+        std::cout << "Матрица А:" << std::endl;
         print_matrix(A.data(), n1, n2);
-        std::cout << "матрица B:" << std::endl;
+        std::cout << "Матрица B:" << std::endl;
         print_matrix(B.data(), n2, n3);
     }
-    // 7 - распределить матрицу А по горизонтальным полоскам
-    // ЛОГИКА: хочу чтобы процессы ВДОЛЬ СТРОК РЕШЕТКИ разобрали блоки матрицы А local_n1 * n2
-    // ИЗ УСЛОВИЯ: Матрица А распределяется по горизонтальным полосам вдоль координаты (x,0).
-    std::vector<float> local_A(local_n1 * n2);
-    MPI_Scatter(A.data(), local_n1 * n2, MPI_FLOAT, 
-                local_A.data(), local_n1 * n2, MPI_FLOAT, 
-                0, comm_row);
 
-    // 8 - распределить матрицу B по вертикальным полоскам
-    // ИЗ УСЛОВИЯ: Матрица B распределяется по вертикальным полосам вдоль координаты (0,y). 
+    // 7 - распределить матрицу А по горизонтальным полоскам в локальные матрицы local_A процессов
+    // ИЗ УСЛОВИЯ: Матрица А распределяется по горизонтальным полосам вдоль координаты (x,0).
+    // процессы с y == 0 получают соответствующие блоки через comm_row
+    std::vector<float> local_A(local_n1 * n2);
+    if (y == 0) {
+        MPI_Scatter(A.data(), local_n1 * n2, MPI_FLOAT, 
+                    local_A.data(), local_n1 * n2, MPI_FLOAT, 
+                    0, comm_row);
+    }
+    // затем разосланные полосы A распространяются по столбцам (по y) через comm_col
+    MPI_Bcast(local_A.data(), local_n1 * n2, MPI_FLOAT, 0, comm_col);
+
+    // 8 - ИЗ УСЛОВИЯ: Матрица B распределяется по вертикальным полосам вдоль координаты (0,y). 
     MPI_Datatype column_type;
     /*
     MPI_Type_vector - определяет новый тип данных, состоящий из указанного числа блоков указанного размера
@@ -138,17 +135,19 @@ int main(int argc, char* argv[]) {
                     local_B.data(), n2 * local_n3, MPI_FLOAT,
                     0, comm_col);
     }
-
-    // 9 - рассылка данных (стадии вычисления 3-4 из условия) 
-    // local_A рассылаю по столбцам, local_B по строкам
-    MPI_Bcast(local_A.data(), local_n1 * n2, MPI_FLOAT, 0, comm_col);
+    
+    // разослал матрицу B по вертикальным полоскам в локальные матрицы local_B в comm_row, теперь рассылаю local_B по comm_row всем процессам вообще
     MPI_Bcast(local_B.data(), n2 * local_n3, MPI_FLOAT, 0, comm_row);
 
-    // 10 - локальное умножение подматриц
+    // 9 - локальное умножение подматриц
     std::vector<float> local_C(local_n1 * local_n3, 0.0);
     mult_matrix(local_A.data(), local_B.data(), local_C.data(), local_n1, n2, local_n3);
+    
+    MPI_Barrier(comm_grid);
+    std::cout << "Матрица local_C:" << "x = " << x << ", y = " << y << std::endl;
+    print_matrix(local_C.data(), local_n1, local_n3);
 
-    // 11 - сборака результатов вычислений подматриц local_C в матрицу C с учетом смещений
+    // 10 - сборака результатов вычислений подматриц local_C в матрицу C с учетом смещений
     std::vector<float> C;
     std::vector<int> recvcounts(size, local_n1 * local_n3); // массив количества элементов для каждой подматрицы в С
     std::vector<int> displs(size);                          // массив смещений для каждой подматрицы в С (ранг - смещение)
@@ -168,7 +167,7 @@ int main(int argc, char* argv[]) {
                 C.data(), recvcounts.data(), displs.data(), MPI_FLOAT,
                 0, comm_grid);
 
-    // 12 - вывод 
+    // 11 - вывод 
     if (rank == 0) {
         std::cout << "матрица C после сборки подматриц:" << std::endl;
         print_matrix(C.data(), n1, n3);
