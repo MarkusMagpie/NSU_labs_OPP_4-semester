@@ -102,11 +102,11 @@ int main(int argc, char* argv[]) {
                     local_A.data(), local_n1 * n2, MPI_FLOAT, 
                     0, comm_col);
     }
-    // распространение полученных блоков local_A по строке
+    // ИЗ УСЛОВИЯ: Полосы А распространяются в измерении y.
     MPI_Bcast(local_A.data(), local_n1 * n2, MPI_FLOAT, 0, comm_row);
 
     // 8 - распределить матрицу B по вертикальным полоскам в локальные матрицы partB процессов
-    // ИЗ УСЛОВИЯ: Матрица B распределяется по вертикальным полосам вдоль координаты (0,y)
+    // ИЗ УСЛОВИЯ: Матрица B распределяется по вертикальным полосам вдоль координаты (0,y).
     MPI_Datatype column_type, resized_column_type;
     /*
     MPI_Type_vector - определяет новый тип данных, состоящий из указанного числа блоков указанного размера
@@ -128,10 +128,11 @@ int main(int argc, char* argv[]) {
                     local_B.data(), n2 * local_n3, MPI_FLOAT,
                     0, comm_row);
     }
-    // распространение полученных блоков local_B по столбцу 
+    // Из УСЛОВИЯ: Полосы B распространяются в измерении х.
     MPI_Bcast(local_B.data(), n2 * local_n3, MPI_FLOAT, 0, comm_col);
 
     // 9 - локальное умножение подматриц
+    // ИЗ УСЛОВИЯ: Каждый процесс вычисляет одну подматрицу произведения.
     std::vector<float> local_C(local_n1 * local_n3, 0.0);
     mult_matrix(local_A.data(), local_B.data(), local_C.data(), local_n1, n2, local_n3);
 
