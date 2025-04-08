@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
     int p1 = dims[0], p2 = dims[1]; // параметры решетки 
     
     // размеры матриц
-    int n1 = 4, n2 = 4, n3 = 4;
+    int n1 = 8, n2 = 8, n3 = 8;
 
     // 2 - создание декартовой решетки - коммуникатора для 2D 
     int periods[2] = {0, 0};
@@ -70,9 +70,10 @@ int main(int argc, char* argv[]) {
 
     // 4 - создание подкоммуникаторов 
     MPI_Comm comm_row, comm_col;
-    int remain_dims_row[2] = {false, true}; // коммуникатор по строкам: изменения по x не сохраняются, по y сохраняются
-    int remain_dims_col[2] = {true, false}; // по столбцам
-    MPI_Cart_sub(comm_grid, remain_dims_row, &comm_row);
+    // в MPI координаты процесса (x,y) <=> (номер строки, номер столбца)
+    int remain_dims_row[2] = {false, true}; 
+    int remain_dims_col[2] = {true, false};
+    MPI_Cart_sub(comm_grid, remain_dims_row, &comm_row); // все процессы в одной строке (с одним x) в одном подкоммуникаторе -> фиксирую x, разрешаю менять y
     MPI_Cart_sub(comm_grid, remain_dims_col, &comm_col);
 
     // 5 - размер локальных блоков
@@ -134,7 +135,16 @@ int main(int argc, char* argv[]) {
     // 9 - локальное умножение подматриц
     // ИЗ УСЛОВИЯ: Каждый процесс вычисляет одну подматрицу произведения.
     std::vector<float> local_C(local_n1 * local_n3, 0.0);
+    double start = MPI_Wtime();
     mult_matrix(local_A.data(), local_B.data(), local_C.data(), local_n1, n2, local_n3);
+    double end = MPI_Wtime();
+    double local_elapsed = end - start;
+
+    // сбор времени выполнения со всех процессов
+    std::vector<double> all_elapsed(size);
+    MPI_Gather(&local_elapsed, 1, MPI_DOUBLE, 
+              all_elapsed.data(), 1, MPI_DOUBLE, 
+              0, comm_grid);
 
     // 10 - сбор - объединение локальных подматриц local_C в итоговую матрицу C 
     // block_type - описывает подматрицу размера local_n1 * local_n3, с шагом в памяти равным n3
@@ -162,6 +172,8 @@ int main(int argc, char* argv[]) {
     if (rank == 0) {
         std::cout << "матрица C после сборки подматриц:" << std::endl;
         print_matrix(C.data(), n1, n3);
+        double avg_elapsed = std::accumulate(all_elapsed.begin(), all_elapsed.end(), 0.0) / size;
+        std::cout << avg_elapsed << std::endl;
     }
 
     MPI_Type_free(&column_type);
