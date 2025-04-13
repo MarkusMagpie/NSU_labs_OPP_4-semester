@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
     int p1 = dims[0], p2 = dims[1]; // параметры решетки 
     
     // размеры матриц
-    int n1 = 8, n2 = 8, n3 = 8;
+    int n1 = 4, n2 = 4, n3 = 4;
 
     // 2 - создание декартовой решетки - коммуникатора для 2D 
     int periods[2] = {0, 0};
@@ -95,6 +95,8 @@ int main(int argc, char* argv[]) {
         print_matrix(B.data(), n2, n3);
     }
 
+    double start = MPI_Wtime();
+
     // 7 - распределить матрицу А по горизонтальным полоскам в локальные матрицы partA процессов
     // ИЗ УСЛОВИЯ: Матрица А распределяется по горизонтальным полосам вдоль координаты (x,0)
     std::vector<float> local_A(local_n1 * n2);
@@ -135,16 +137,7 @@ int main(int argc, char* argv[]) {
     // 9 - локальное умножение подматриц
     // ИЗ УСЛОВИЯ: Каждый процесс вычисляет одну подматрицу произведения.
     std::vector<float> local_C(local_n1 * local_n3, 0.0);
-    double start = MPI_Wtime();
     mult_matrix(local_A.data(), local_B.data(), local_C.data(), local_n1, n2, local_n3);
-    double end = MPI_Wtime();
-    double local_elapsed = end - start;
-
-    // сбор времени выполнения со всех процессов
-    std::vector<double> all_elapsed(size);
-    MPI_Gather(&local_elapsed, 1, MPI_DOUBLE, 
-              all_elapsed.data(), 1, MPI_DOUBLE, 
-              0, comm_grid);
 
     // 10 - сбор - объединение локальных подматриц local_C в итоговую матрицу C 
     // block_type - описывает подматрицу размера local_n1 * local_n3, с шагом в памяти равным n3
@@ -167,6 +160,15 @@ int main(int argc, char* argv[]) {
     MPI_Gatherv(local_C.data(), local_n1 * local_n3, MPI_FLOAT,
                C.data(), recvcounts.data(), displs.data(), resized_block_type, 
                0, comm_grid);
+
+    double end = MPI_Wtime();
+    double local_elapsed = end - start;
+
+    // сбор времени выполнения со всех процессов
+    std::vector<double> all_elapsed(size);
+    MPI_Gather(&local_elapsed, 1, MPI_DOUBLE, 
+              all_elapsed.data(), 1, MPI_DOUBLE, 
+              0, comm_grid);
 
     // 11 - вывод 
     if (rank == 0) {
