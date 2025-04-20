@@ -9,7 +9,7 @@ const int Nx = 100, Ny = 100, Nz = 100; // параметры сетки
 const double hx = D / (Nx - 1); // шаги сетки по различным осям
 const double hy = D / (Ny - 1);
 const double hz = D / (Nz - 1);
-const int max_iterarions = 10000;
+const int max_iterarions = 200;
 
 double phi(double x, double y, double z) {
     return x*x + y*y + z*z;
@@ -18,6 +18,7 @@ double phi(double x, double y, double z) {
 double rho(double x, double y, double z) { 
     return 6.0 - a * phi(x, y, z); 
 }
+
 
 
 int main(int argc, char* argv[]) {
@@ -30,7 +31,7 @@ int main(int argc, char* argv[]) {
     // 1 - декомпозиция пространства - метод распараллеливания 
     int chunk_size = Nx / size;
     int rem = Nx % size; // если Nx % num_procs != 0, первые remainder процессов получают +1 узел
-    int start_x = rank * chunk_size + std::min(rank, rem);
+    int start_x = rank * chunk_size + std::min(rank, rem); // начальный индекс узлов процесса в глобальной сетке
     int end_x = start_x + chunk_size - 1;
     if (rank < rem) end_x += 1;
     if (rank == size - 1) end_x = Nx - 1; // коректирую последний процесс
@@ -40,8 +41,8 @@ int main(int argc, char* argv[]) {
     // 2 - инициализация данных
     // выделим память для локальных массивов phi_old и phi_new с учетом 2 теневых слоев 
     // теневые слои хранят данные соседних процессов (1 сдева и 1 справа)
-    int halo = 1;
-    int local_nx = end_x - start_x + 1 + 2*halo; // строки которые обрабатывает текущий процесс + 2 теневых слоя
+    int shadow = 1;
+    int local_nx = end_x - start_x + 1 + 2*shadow; // строки которые обрабатывает текущий процесс + 2 теневых слоя
 
     double* phi_old = new double[local_nx * Ny * Nz]();
     double* phi_new = new double[local_nx * Ny * Nz]();
@@ -54,8 +55,8 @@ int main(int argc, char* argv[]) {
                 double x = -1.0 + start_x * hx;
                 double y = -1.0 + j * hy;
                 double z = -1.0 + k * hz;
-                // 1 - первый реальный слой, а 0 - теневой. поэтому и (halo * Ny * Nz)
-                phi_old[halo * Ny * Nz + j * Nz + k] = phi(x, y, z);
+                // 1 - первый реальный слой, а 0 - теневой. поэтому и (shadow * Ny * Nz)
+                phi_old[shadow * Ny * Nz + j * Nz + k] = phi(x, y, z);
             } 
 
             // это последний/правый крайний процесс? да - по индексу последнего реального слоя пишу фи
@@ -63,8 +64,8 @@ int main(int argc, char* argv[]) {
                 double x = -1.0 + end_x * hx;
                 double y = -1.0 + j * hy;
                 double z = -1.0 + k * hz;
-                // индекс: (local_nx - halo - 1) - индекс последнего реального слоя (после него - теневой)
-                phi_old[(local_nx - halo - 1) * Ny * Nz + j * Nz + k] = phi(x, y, z);
+                // индекс: (local_nx - shadow - 1) - индекс последнего реального слоя (после него - теневой)
+                phi_old[(local_nx - shadow - 1) * Ny * Nz + j * Nz + k] = phi(x, y, z);
             }   
         }
     }
@@ -80,29 +81,29 @@ int main(int argc, char* argv[]) {
     do {
         request_count = 0;
         // обмен граничными слоями
-        // отсылка левого теневого слоя соседу слева (halo-1) и получение от него
+        // отсылка левого теневого слоя соседу слева (shadow-1) и получение от него
         if (rank > 0) {
-            // отправляем левую границу (индекс halo) соседу слева
-            MPI_Isend(&phi_old[halo * Ny * Nz], Ny * Nz, MPI_DOUBLE, rank - 1, 0, MPI_COMM_WORLD, &requests[request_count++]);
+            // отправляем левую границу (индекс shadow) соседу слева
+            MPI_Isend(&phi_old[shadow * Ny * Nz], Ny * Nz, MPI_DOUBLE, rank - 1, 0, MPI_COMM_WORLD, &requests[request_count++]);
             // получаем левый теневой (индекс 0) от соседа слева
             MPI_Irecv(&phi_old[0], Ny * Nz, MPI_DOUBLE, rank - 1, 0, MPI_COMM_WORLD, &requests[request_count++]);
         }
 
         // отправка правой границы соседу справа (rank+1) и получение от него
         if (rank < size - 1) {
-            // отправляем правую границу (индекс local_nx - halo - 1) соседу справа
-            MPI_Isend(&phi_old[(local_nx - halo - 1) * Ny * Nz], Ny * Nz, MPI_DOUBLE, rank + 1, 0, MPI_COMM_WORLD, &requests[request_count++]);
+            // отправляем правую границу (индекс local_nx - shadow - 1) соседу справа
+            MPI_Isend(&phi_old[(local_nx - shadow - 1) * Ny * Nz], Ny * Nz, MPI_DOUBLE, rank + 1, 0, MPI_COMM_WORLD, &requests[request_count++]);
             // получаем правый теневой (индекс local_nx - 1)
             MPI_Irecv(&phi_old[(local_nx - 1) * Ny * Nz], Ny * Nz, MPI_DOUBLE, rank + 1, 0, MPI_COMM_WORLD, &requests[request_count++]);
         }
 
-        // вычисление внутренних узлов (по оси X: с halo+1 по local_nx-halo-1; )
+        // вычисление внутренних узлов (по оси X: с shadow+1 по local_nx-shadow-1; )
         max_diff = 0.0;
-        for (int i = halo; i < local_nx - halo; ++i) {
+        for (int i = shadow + 1; i < local_nx - shadow; ++i) {
             for (int j = 1; j < Ny - 1; ++j) {
                 for (int k = 1; k < Nz - 1; ++k) {
                     // глобальная координата X
-                    int global_i = start_x + (i - halo);
+                    int global_i = start_x + (i - shadow);
 
                     // формула для итерационного процесса метода Якоби
                     double term_x = (phi_old[(i+1)*Ny*Nz + j*Nz + k] + phi_old[(i-1)*Ny*Nz + j*Nz + k]) / (hx*hx);
@@ -131,10 +132,10 @@ int main(int argc, char* argv[]) {
         MPI_Waitall(request_count, requests, MPI_STATUSES_IGNORE);
         // по операции MPI_MAX собирает значения max_diff со всех процессов и выдаёт global_max_diff
         MPI_Allreduce(&max_diff, &global_max_diff, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        if (rank == 0) std::cout << "Iteration: " << iterations << " Max diff: " << global_max_diff << std::endl;
 
         std::swap(phi_old, phi_new);
         ++iterations;
-        // std::cout << "Iteration: " << iterations << " Max diff: " << global_max_diff << std::endl;
     } while (global_max_diff > epsilon && iterations < max_iterarions);
 
     double end_time = MPI_Wtime();
