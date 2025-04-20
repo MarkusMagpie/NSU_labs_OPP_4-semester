@@ -139,10 +139,11 @@ int main(int argc, char* argv[]) {
 
     double end_time = MPI_Wtime();
 
+    // 4 - вывод результатов и завершение MPI программы
     if (rank == 0) {
-        std::cout << "Iterations: " << iterations << std::endl;
-        std::cout << "Max diff: " << global_max_diff << "; epsilon: " << epsilon << std::endl;
-        std::cout << "Time: " << end_time - start_time << std::endl;
+        std::cout << "итерации: " << iterations << std::endl;
+        std::cout << "max diff: " << global_max_diff << "; epsilon: " << epsilon << std::endl;
+        std::cout << "time: " << end_time - start_time << std::endl;
     }
 
     delete[] phi_old;
