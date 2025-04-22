@@ -5,11 +5,12 @@
 
 const double a = 1e2; // параметр уравнения
 const double epsilon = 1e-16; // порог сходимости
-const double D = 2.0; // область моделирования: [-1, 1] x [-1, 1] x [-1, 1]
+const double D_x = 2.0, D_y = 2.0, D_z = 2.0; // область моделирования: [-1, 1] x [-1, 1] x [-1, 1]
+const double x_0 = -1.0, y_0 = -1.0, z_0 = -1.0;
 const int Nx = 100, Ny = 100, Nz = 100; // параметры сетки
-const double hx = D / (Nx - 1); // шаги сетки по различным осям (расстояния между узлами сетки)
-const double hy = D / (Ny - 1);
-const double hz = D / (Nz - 1);
+const double hx = D_x / (Nx - 1); // шаги сетки по различным осям (расстояния между узлами сетки)
+const double hy = D_y / (Ny - 1);
+const double hz = D_z / (Nz - 1);
 const int max_iterarions = 10000;
 
 double phi(double x, double y, double z) {
@@ -40,16 +41,6 @@ int main(int argc, char* argv[]) {
 
     std::cout << "start_x = " << start_x << ", end_x = " << end_x << std::endl;
 
-    // if (rank == 0) {
-    //     for (int i = 0; i < Nx; i++) {
-    //         for (int j = 0; j < Ny; j++) {
-    //             for (int k = 0; k < Nz; k++) {
-    //             std::cout << "(" << i << "," << j << "," << k << ") -> " << idx(i,j,k) << std::endl;
-    //             }
-    //         }
-    //     }
-    // }
-
     // 2 - инициализация данных
     // выделим память для локальных массивов phi_old и phi_new с учетом 2 теневых слоев 
     // теневые слои хранят данные соседних процессов (1 сдева и 1 справа)
@@ -59,6 +50,7 @@ int main(int argc, char* argv[]) {
     // 3d массивы 
     double* phi_old = new double[local_nx * Ny * Nz]();
     double* phi_new = new double[local_nx * Ny * Nz]();
+    double* rho_vals = new double[local_nx * Ny * Nz]();
 
     // инициализация краевых узлов в 3d массивах - ЕДИНОЖДЫ
     // УСЛОВИЕ: если узел на границе, то его значение будет равно phi(x,y,z)
@@ -67,11 +59,12 @@ int main(int argc, char* argv[]) {
         int global_i = start_x + (i - shadow);
         for (int j = 0; j < Ny; ++j) {
             for (int k = 0; k < Nz; ++k) {
-                bool is_boundary = (global_i == 0 || global_i == Nx - 1 || j == 0 || j == Ny - 1 || k == 0 || k == Nz - 1);
-                if (is_boundary) {
-                    double x = -1.0 + global_i * hx;
-                    double y = -1.0 + j * hy;
-                    double z = -1.0 + k * hz;
+                double x = x_0 + global_i * hx;
+                double y = y_0 + j * hy;
+                double z = z_0 + k * hz;
+                rho_vals[idx(i,j,k)] = rho(x, y, z);
+                bool boundary = (global_i == 0 || global_i == Nx - 1 || j == 0 || j == Ny - 1 || k == 0 || k == Nz - 1);
+                if (boundary) {
                     phi_old[idx(i, j, k)] = phi(x, y, z);
                 }
             }
@@ -86,7 +79,7 @@ int main(int argc, char* argv[]) {
 
     double start_time = MPI_Wtime();
 
-    for (; iterations < max_iterarions && global_max_diff > epsilon; ++iterations) {
+    do {
         request_count = 0;
         // обмен граничными слоями - пары неблокирующих опрераций
 
@@ -121,9 +114,9 @@ int main(int argc, char* argv[]) {
                     double term_z = (phi_old[idx(i,j,k+1)] + phi_old[idx(i,j,k-1)]) / (hz*hz);
 
                     // координаты узла с индексами i, j, k в физическом пространстве
-                    double x = -1.0 + global_i * hx;
-                    double y = -1.0 + j * hy;
-                    double z = -1.0 + k * hz;
+                    double x = x_0 + global_i * hx;
+                    double y = y_0 + j * hy;
+                    double z = z_0 + k * hz;
 
                     // double rho_new_x = (phi_old[(i+1)*Ny*Nz + j*Nz + k] - 2*phi_old[i*Ny*Nz + j*Nz + k] + phi_old[(i-1)*Ny*Nz + j*Nz + k]) / (hx*hx);
                     // double rho_new_y = (phi_old[i*Ny*Nz + (j+1)*Nz + k] - 2*phi_old[i*Ny*Nz + j*Nz + k] + phi_old[i*Ny*Nz + (j-1)*Nz + k]) / (hy*hy);
@@ -131,7 +124,7 @@ int main(int argc, char* argv[]) {
                     // double rho_new = (rho_new_x + rho_new_y + rho_new_z) - a * phi_old[i*Ny*Nz + j*Nz + k]; 
 
                     // формула якоби
-                    double numerator = term_x + term_y + term_z - rho(x,y,z);
+                    double numerator = term_x + term_y + term_z - rho_vals[idx(i,j,k)];
                     double denom = 2.0/(hx*hx) + 2.0/(hy*hy) + 2.0/(hz*hz) + a;
                     phi_new[idx(i,j,k)] = numerator / denom;
 
@@ -146,7 +139,7 @@ int main(int argc, char* argv[]) {
         // if (rank == 0) std::cout << "Iteration: " << iterations << " Max diff: " << global_max_diff << std::endl;
 
         // std::swap(phi_old, phi_new); - ошибка
-        // обновляем ТОЛЬКО внутренние узлы. границы гнать нахуй
+        // обновляем ТОЛЬКО внутренние узлы
         for (int i = 1; i < local_nx - 1; ++i) {
             for (int j = 1; j < Ny - 1; ++j) {
                 for (int k = 1; k < Nz - 1; ++k) {
@@ -154,7 +147,8 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
-    }
+        ++iterations;
+    } while (global_max_diff > epsilon && iterations < max_iterarions);
 
     double end_time = MPI_Wtime();
 
@@ -167,6 +161,7 @@ int main(int argc, char* argv[]) {
 
     delete[] phi_old;
     delete[] phi_new;
+    delete[] rho_vals;
 
     MPI_Finalize();
     return 0;

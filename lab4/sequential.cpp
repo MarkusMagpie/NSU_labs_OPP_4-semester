@@ -4,13 +4,14 @@
 #include <chrono>
 #include <algorithm>
 
-const double a = 1e2; // параметр уравнения
-const double epsilon = 1e-9; // порог сходимости
-const double D = 2.0; // область моделирования: [-1, 1] x [-1, 1] x [-1, 1]
+const double a = 1e5; // параметр уравнения
+const double epsilon = 1e-8; // порог сходимости
+const double D_x = 2.0, D_y = 2.0, D_z = 2.0; // область моделирования: [-1, 1] x [-1, 1] x [-1, 1]
+const double x_0 = -1.0, y_0 = -1.0, z_0 = -1.0;
 const int Nx = 100, Ny = 100, Nz = 100; // параметры сетки
-const double hx = D / (Nx - 1); // шаги сетки по различным осям
-const double hy = D / (Ny - 1);
-const double hz = D / (Nz - 1);
+const double hx = D_x / (Nx - 1); // шаги сетки по различным осям
+const double hy = D_y / (Ny - 1);
+const double hz = D_z / (Nz - 1);
 const int max_iterations = 10000;
 
 inline double phi(double x, double y, double z) {
@@ -28,19 +29,20 @@ int idx(int i, int j, int k) {
 int main() {
     std::vector<double> phi_old(Nx * Ny * Nz, 0.0);
     std::vector<double> phi_new(Nx * Ny * Nz, 0.0);
+    std::vector<double> rho_vals(Nx * Ny * Nz, 0.0);
 
     // граничные условия и начальное приближение
     for (int i = 0; i < Nx; ++i) {
-        double x = -1.0 + i * hx;
+        double x = x_0 + i * hx;
         for (int j = 0; j < Ny; ++j) {
-            double y = -1.0 + j * hy;
+            double y = y_0 + j * hy;
             for (int k = 0; k < Nz; ++k) {
-                double z = -1.0 + k * hz;
+                double z = z_0 + k * hz;
+                rho_vals[idx(i,j,k)] = rho(x, y, z);
                 // граница: i=0, i=Nx-1, j=0, j=Ny-1, k=0, k=Nz-1
                 if (i == 0 || i == Nx-1 || j == 0 || j == Ny-1 || k == 0 || k == Nz-1) {
                     phi_old[idx(i,j,k)] = phi(x,y,z);
                 }
-                // внутренние точки остаются в 0.0
             }
         }
     }
@@ -62,12 +64,12 @@ int main() {
                     double term_z = (phi_old[idx(i,j,k+1)] + phi_old[idx(i,j,k-1)]) / (hz*hz);
 
                     // координаты точки в физическом пространстве - для вычисления фи
-                    double x = -1.0 + i * hx;
-                    double y = -1.0 + j * hy;
-                    double z = -1.0 + k * hz;
+                    double x = x_0 + i * hx;
+                    double y = y_0 + j * hy;
+                    double z = z_0 + k * hz;
 
                     // формула якоби
-                    double numerator = term_x + term_y + term_z - rho(x,y,z);
+                    double numerator = term_x + term_y + term_z - rho_vals[idx(i,j,k)];
                     double denom = 2.0/(hx*hx) + 2.0/(hy*hy) + 2.0/(hz*hz) + a;
                     phi_new[idx(i,j,k)] = numerator / denom;
 
