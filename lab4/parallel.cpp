@@ -4,7 +4,7 @@
 #include <cmath>
 
 const double a = 1e2; // параметр уравнения
-const double epsilon = 1e-16; // порог сходимости
+const double epsilon = 1e-8; // порог сходимости
 const double D_x = 2.0, D_y = 2.0, D_z = 2.0; // область моделирования: [-1, 1] x [-1, 1] x [-1, 1]
 const double x_0 = -1.0, y_0 = -1.0, z_0 = -1.0;
 const int Nx = 100, Ny = 100, Nz = 100; // параметры сетки
@@ -23,6 +23,25 @@ double rho(double x, double y, double z) {
 
 int idx(int i, int j, int k) {
     return i * Ny * Nz + j * Nz + k;
+}
+
+void for_slice(int i, 
+               double* phi_old, double* phi_new, double* rho_vals,
+               double& max_diff, int start_x, int shadow) {
+    for (int j = 1; j < Ny - 1; ++j) {
+        for (int k = 1; k < Nz - 1; ++k) {
+            double term_x = (phi_old[idx(i+1,j,k)] + phi_old[idx(i-1,j,k)]) / (hx*hx);
+            double term_y = (phi_old[idx(i,j+1,k)] + phi_old[idx(i,j-1,k)]) / (hy*hy);
+            double term_z = (phi_old[idx(i,j,k+1)] + phi_old[idx(i,j,k-1)]) / (hz*hz);
+
+            double numerator = term_x + term_y + term_z - rho_vals[idx(i,j,k)];
+            double denom = 2.0/(hx*hx) + 2.0/(hy*hy) + 2.0/(hz*hz) + a;
+            phi_new[idx(i,j,k)] = numerator / denom;
+
+            double diff = std::abs(phi_new[idx(i,j,k)] - phi_old[idx(i,j,k)]);
+            max_diff = std::max(max_diff, diff);
+        }
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -97,50 +116,28 @@ int main(int argc, char* argv[]) {
             MPI_Irecv(&phi_old[(local_nx - 1) * Ny * Nz], Ny * Nz, MPI_DOUBLE, rank + 1, 0, MPI_COMM_WORLD, &requests[request_count++]);
         }
 
+        // вычисление внутренних узлов (по оси X: с shadow+1 по local_nx-shadow-1; )
+        max_diff = 0.0;
+        int i;
+        for (i = shadow + 2; i < local_nx - shadow - 2; ++i) {
+            for_slice(i, phi_old, phi_new, rho_vals, max_diff, start_x, shadow);
+        }
+
         // ждёт завершения всех запросов (отправок/приёмов) чтобы мог безопасно читать/писать в переданные буфера
         MPI_Waitall(request_count, requests, MPI_STATUSES_IGNORE);
 
-        // вычисление внутренних узлов (по оси X: с shadow+1 по local_nx-shadow-1; )
-        max_diff = 0.0;
-        for (int i = shadow + 1; i < local_nx - shadow; ++i) {
-            for (int j = 1; j < Ny - 1; ++j) {
-                for (int k = 1; k < Nz - 1; ++k) {
-                    // глобальная координата X
-                    int global_i = start_x + (i - shadow);
+        i = shadow; // i=1
+        for_slice(i, phi_old, phi_new, rho_vals, max_diff, start_x, shadow);
 
-                    // формула для итерационного процесса метода Якоби
-                    double term_x = (phi_old[idx(i+1,j,k)] + phi_old[idx(i-1,j,k)]) / (hx*hx);
-                    double term_y = (phi_old[idx(i,j+1,k)] + phi_old[idx(i,j-1,k)]) / (hy*hy);
-                    double term_z = (phi_old[idx(i,j,k+1)] + phi_old[idx(i,j,k-1)]) / (hz*hz);
-
-                    // координаты узла с индексами i, j, k в физическом пространстве
-                    double x = x_0 + global_i * hx;
-                    double y = y_0 + j * hy;
-                    double z = z_0 + k * hz;
-
-                    // double rho_new_x = (phi_old[(i+1)*Ny*Nz + j*Nz + k] - 2*phi_old[i*Ny*Nz + j*Nz + k] + phi_old[(i-1)*Ny*Nz + j*Nz + k]) / (hx*hx);
-                    // double rho_new_y = (phi_old[i*Ny*Nz + (j+1)*Nz + k] - 2*phi_old[i*Ny*Nz + j*Nz + k] + phi_old[i*Ny*Nz + (j-1)*Nz + k]) / (hy*hy);
-                    // double rho_new_z = (phi_old[i*Ny*Nz + j*Nz + (k+1)] - 2*phi_old[i*Ny*Nz + j*Nz + k] + phi_old[i*Ny*Nz + j*Nz + (k-1)]) / (hz*hz);
-                    // double rho_new = (rho_new_x + rho_new_y + rho_new_z) - a * phi_old[i*Ny*Nz + j*Nz + k]; 
-
-                    // формула якоби
-                    double numerator = term_x + term_y + term_z - rho_vals[idx(i,j,k)];
-                    double denom = 2.0/(hx*hx) + 2.0/(hy*hy) + 2.0/(hz*hz) + a;
-                    phi_new[idx(i,j,k)] = numerator / denom;
-
-                    double diff = std::abs(phi_new[idx(i,j,k)] - phi_old[idx(i,j,k)]);
-                    max_diff = std::max(max_diff, diff);
-                }
-            }
-        }
+        i = local_nx - shadow - 1; // i=local_nx-2
+        for_slice(i, phi_old, phi_new, rho_vals, max_diff, start_x, shadow);
 
         // по операции MPI_MAX собирает значения max_diff со всех процессов и выдаёт global_max_diff
         MPI_Allreduce(&max_diff, &global_max_diff, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
         // if (rank == 0) std::cout << "Iteration: " << iterations << " Max diff: " << global_max_diff << std::endl;
 
-        // std::swap(phi_old, phi_new); - ошибка
-        // обновляем ТОЛЬКО внутренние узлы
-        for (int i = 1; i < local_nx - 1; ++i) {
+        // std::swap(phi_old, phi_new);
+        for (int i = shadow; i < local_nx - shadow; ++i) {
             for (int j = 1; j < Ny - 1; ++j) {
                 for (int k = 1; k < Nz - 1; ++k) {
                     phi_old[idx(i,j,k)] = phi_new[idx(i,j,k)];
