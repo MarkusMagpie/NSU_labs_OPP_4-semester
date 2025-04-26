@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <iostream>
 #include <cmath>
+#include <chrono>
 
 const float a = 1e2; // параметр уравнения
 const float epsilon = 1e-8; // порог сходимости
@@ -96,7 +97,7 @@ int main(int argc, char* argv[]) {
     MPI_Request requests[4];
     int request_count;
 
-    float start_time = MPI_Wtime();
+    double start_time = MPI_Wtime();
 
     do {
         request_count = 0;
@@ -147,13 +148,13 @@ int main(int argc, char* argv[]) {
         ++iterations;
     } while (global_max_diff > epsilon && iterations < max_iterarions);
 
-    float end_time = MPI_Wtime();
+    double elapsed = MPI_Wtime() - start_time;
 
     // 4 - вывод результатов и завершение MPI программы
     if (rank == 0) {
         std::cout << "итерации: " << iterations << std::endl;
         std::cout << "max diff: " << global_max_diff << "; epsilon: " << epsilon << std::endl;
-        std::cout << "time: " << end_time - start_time << std::endl;
+        std::cout << elapsed << std::endl;
     }
 
     delete[] phi_old;
