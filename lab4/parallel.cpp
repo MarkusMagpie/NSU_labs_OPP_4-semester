@@ -86,6 +86,7 @@ int main(int argc, char* argv[]) {
                 bool boundary = (global_i == 0 || global_i == Nx - 1 || j == 0 || j == Ny - 1 || k == 0 || k == Nz - 1);
                 if (boundary) {
                     phi_old[idx(i, j, k)] = phi(x, y, z);
+                    phi_new[idx(i, j, k)] = phi(x, y, z);
                 }
             }
         }
@@ -117,10 +118,10 @@ int main(int argc, char* argv[]) {
             MPI_Irecv(&phi_old[(local_nx - 1) * Ny * Nz], Ny * Nz, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD, &requests[request_count++]);
         }
 
-        // вычисление внутренних узлов (по оси X: с shadow+1 по local_nx-shadow-1; )
+        // вычисление внутренних узлов
         max_diff = 0.0;
         int i;
-        for (i = shadow + 2; i < local_nx - shadow - 2; ++i) {
+        for (i = shadow + 1; i < local_nx - shadow - 1; ++i) {
             for_slice(i, phi_old, phi_new, rho_vals, max_diff, start_x, shadow);
         }
 
@@ -137,14 +138,15 @@ int main(int argc, char* argv[]) {
         MPI_Allreduce(&max_diff, &global_max_diff, 1, MPI_FLOAT, MPI_MAX, MPI_COMM_WORLD);
         // if (rank == 0) std::cout << "Iteration: " << iterations << " Max diff: " << global_max_diff << std::endl;
 
-        // std::swap(phi_old, phi_new);
-        for (int i = shadow; i < local_nx - shadow; ++i) {
-            for (int j = 1; j < Ny - 1; ++j) {
-                for (int k = 1; k < Nz - 1; ++k) {
-                    phi_old[idx(i,j,k)] = phi_new[idx(i,j,k)];
-                }
-            }
-        }
+        // расскажи про 2 варианта: старый и сразу инициализировать граничные узлы в phi_new + swap (он же быстрее)
+        std::swap(phi_old, phi_new);
+        // for (int i = shadow; i < local_nx - shadow; ++i) {
+        //     for (int j = 1; j < Ny - 1; ++j) {
+        //         for (int k = 1; k < Nz - 1; ++k) {
+        //             phi_old[idx(i,j,k)] = phi_new[idx(i,j,k)];
+        //         }
+        //     }
+        // }
         ++iterations;
     } while (global_max_diff > epsilon && iterations < max_iterarions);
 
