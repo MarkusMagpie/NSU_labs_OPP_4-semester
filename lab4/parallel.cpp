@@ -86,7 +86,8 @@ int main(int argc, char* argv[]) {
                 bool boundary = (global_i == 0 || global_i == Nx - 1 || j == 0 || j == Ny - 1 || k == 0 || k == Nz - 1);
                 if (boundary) {
                     phi_old[idx(i, j, k)] = phi(x, y, z);
-                    phi_new[idx(i, j, k)] = phi(x, y, z);
+                    // чтобы после свапа краевые условия остались корректно "подхвачены" новым основным массивом
+                    phi_new[idx(i, j, k)] = phi(x, y, z); 
                 }
             }
         }
