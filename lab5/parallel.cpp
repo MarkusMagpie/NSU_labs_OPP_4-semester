@@ -10,14 +10,14 @@
 
 enum Measures {
     TASK_NUM = 50, // число задач на каждом процессе
-    ITERATIONS = 10 // число итераций выполнения 
+    ITERATIONS = 10 // число итераций выполнения программы
 };
 
 // коды статусов для обмена сообщениями
 enum Status {
     FINISHED = -1, // все задачи завершены
     NO_TASKS = -2, // нет задач для передачи
-    BALANCE = 1 // флаг балансировки включён
+    BALANCE = 1 // ФЛАГ БАЛАНСА - делаю с без него и с ним графики 
 };
 
 // потоки: для обработки сообщений и выполнения задач
@@ -89,7 +89,7 @@ void refillTaskList(SafeQueue &queue, int size, int rank, int iteration) {
 }
 
 // выполняем задачи из очереди
-void executeTasks(SafeQueue &queue, int rank) {
+void executeTasks(SafeQueue &queue) {
     while (!queue.isEmpty()) {
         int n;
         if (queue.pop(n)) {
@@ -102,61 +102,65 @@ void executeTasks(SafeQueue &queue, int rank) {
 // поток для обмена сообщениями по MPI: запрос/ответ для балансировки и сигнал завершения
 void runMessageThread(SafeQueue &queue, int size, int rank) {
     messageThread = std::thread([&queue, size, rank]() {
-        int msg = 0;               // принимаемая метка или номер rank
-        int recvRank = 0;          // кому отправляем задачи
-        std::vector<int> taskList;      // временный список задач для отправки
+        int msg = 0; // принимаемая метка или номер rank
+        int recvRank = 0; // кому отправляем задачи
+        std::vector<int> taskList; // временный список задач для отправки
 
         while (queue.isRunning()) {
-            // Если получили сообщение о завершении от всех процессов, выходим
+            // если получили сообщение о завершении от всех процессов, выходим
             if (finishCount == size) {
                 queue.setRunning(false);
                 return;
             }
 
-            // Неблокирующий приём сообщения от любого источника с tag = size+1
+            /* неблокирующий БЕСКОНЕЧНЫЙ приём сообщения от любого источника с tag = size+1 - УНИКАЛЬНЫЙ тег именно для 
+            ообщений-запросов задач: ранг или FINISHED 
+            */ 
             MPI_Request request;
-            MPI_Irecv(&msg, 1, MPI_INT, MPI_ANY_SOURCE, size + 1,
-                      MPI_COMM_WORLD, &request);
+            MPI_Irecv(&msg, 1, MPI_INT, MPI_ANY_SOURCE, size + 1, MPI_COMM_WORLD, &request);
             MPI_Status status;
             int flag;
-            // Ожидаем, пока придёт сообщение или очередь остановится
+            // ждем пока придёт сообщение ИЛИ очередь остановится(running=false)
             do {
+                // опрос завершения Irecv. flag=1 - завершен, flag=0 - не завершен
                 MPI_Test(&request, &flag, &status);
             } while (queue.isRunning() && !flag);
 
             if (!queue.isRunning()) return;
 
-            // Если сообщение - сигнал FINISHED, увеличиваем счётчик и останавливаем работу
+            // если сообщение от executionThread - сигнал FINISHED, то останавливаем работу потока
             if (msg == FINISHED) {
+                std::cout << "proc " << rank << " finished" << std::endl;
                 finishCount++;
                 queue.setRunning(false);
                 return;
             }
 
-            // Иначе msg = rank процесса, запрашивающего задачи
+            // иначе msg = rank процесса, запрашивающего задачи и нам нужно отправить в msg свободные задачи
             recvRank = msg;
+            
             int taskCount = 0;
-
-            // Если в очереди есть избыточные задачи, соберём половину для отправки
+            // если в queue есть избыточные задачи, соберём половину для отправки
             if (queue.getSize() > TASK_NUM / size) {
                 taskList.resize(TASK_NUM / size);
                 while (queue.pop(taskList[taskCount])) {
                     taskCount++;
-                    if (taskCount == TASK_NUM / size) break;
+                    if (taskCount == TASK_NUM / size) {
+                        break;
+                    }
                 }
             }
 
-            std::cout << "mT: proc " << rank << " can send "
-                 << taskCount << " tasks to proc " << recvRank << std::endl;
+            std::cout << "mT: process " << rank << " can send "
+                << taskCount << " tasks to proc " << recvRank << std::endl;
 
-            // Если не собралось ни одной задачи, отправляем NO_TASKS
+            // если так и не собралось ни одной задачи, отправляем статус NO_TASKS; иначе - число свободных задач
             taskCount = (taskCount == 0 ? NO_TASKS : taskCount);
             MPI_Send(&taskCount, 1, MPI_INT, recvRank, rank, MPI_COMM_WORLD);
 
-            // Если есть задачи, отправляем их массивом
+            // а вот если есть задачи, то после отправки их количества (taskCount), отправляем их самих массивом
             if (taskCount != NO_TASKS) {
-                MPI_Send(taskList.data(), taskCount, MPI_INT,
-                         recvRank, rank, MPI_COMM_WORLD);
+                MPI_Send(taskList.data(), taskCount, MPI_INT, recvRank, rank, MPI_COMM_WORLD);
             }
             taskList.clear();
         }
@@ -166,35 +170,38 @@ void runMessageThread(SafeQueue &queue, int size, int rank) {
 // поток для выполнения задач и инициирования балансировки
 void runExecutingThread(SafeQueue &queue, int size, int rank) {
     executingThread = std::thread([&queue, size, rank]() {
-        int taskGiven = 0;
+        int taskGiven = 0; // сколько задач дал другой процесс моему (rank) процессу
 
-        // Повторяем ITERATIONS раз: заполнение, выполнение, балансировка, барьер
+        // повторяем ITERATIONS раз: заполнение, выполнение, балансировка, барьер
         for (int i = 0; i < ITERATIONS; i++) {
             refillTaskList(queue, size, rank, i);
-            executeTasks(queue, rank);
+            executeTasks(queue);
 
             if (BALANCE) {
-                // Обход всех процессов для запроса задач у них
+                // обход всех процессов по size для запроса задач у них (у себя не спрашивать!)
                 for (int j = 0; j < size; j++) {
                     if (j == rank) continue;
+                    // отсылка ранга процессу j 
                     MPI_Send(&rank, 1, MPI_INT, j, size + 1, MPI_COMM_WORLD);
                     MPI_Status status1;
-                    MPI_Recv(&taskGiven, 1, MPI_INT, j, j,
-                             MPI_COMM_WORLD, &status1);
+                    // получение количества избыточных задач от процесса j 
+                    MPI_Recv(&taskGiven, 1, MPI_INT, j, j, MPI_COMM_WORLD, &status1);
 
-                    std::cout << "eT: proc " << j << " gave "
-                         << taskGiven << " tasks to proc " << rank << std::endl;
+                    std::cout << "eT: process " << j << " gave "
+                        << taskGiven << " tasks to proc " << rank << std::endl;
 
-                    // Если процесс дал задачи, принимаем массив и выполняем их
+                    // если процесс дал задачи, принимаем массив и выполняем их
                     if (taskGiven != NO_TASKS) {
                         std::vector<int> receivedTasks(taskGiven);
                         MPI_Status status2;
-                        MPI_Recv(receivedTasks.data(), taskGiven,
-                                 MPI_INT, j, j, MPI_COMM_WORLD, &status2);
-                        std::cout << "eT: proc " << rank << " got "
-                             << taskGiven << " tasks from proc " << j << std::endl;
-                        for (int &val : receivedTasks) queue.push(val);
-                        executeTasks(queue, rank);
+                        // от процесса j теперь получаю непосредственно вектор интов с избыточными задачами
+                        MPI_Recv(receivedTasks.data(), taskGiven, MPI_INT, j, j, MPI_COMM_WORLD, &status2);
+                        std::cout << "eT: process " << rank << " got " 
+                            << taskGiven << " tasks from proc " << j << std::endl;
+                        for (int &val : receivedTasks) {
+                            queue.push(val);
+                        }
+                        executeTasks(queue);
                     }
                 }
             }
@@ -202,13 +209,14 @@ void runExecutingThread(SafeQueue &queue, int size, int rank) {
             MPI_Barrier(MPI_COMM_WORLD);
         }
 
-        // После всех итераций посылаем FINISHED всем остальным
+        // после всех итераций посылаем FINISHED всем остальным процессам
         int execFinished = FINISHED;
         for (int i = 0; i < size; i++) {
             if (i == rank) continue;
             MPI_Send(&execFinished, 1, MPI_INT, i, size + 1, MPI_COMM_WORLD);
         }
-        // Если единственный процесс, останавливаем очередь
+        
+        // если единственный процесс, останавливаем очередь
         if (size == 1) queue.setRunning(false);
     });
 }
@@ -224,8 +232,8 @@ int main(int argc, char *argv[]) {
 
     if (rank == 0) {
         std::cout << "size: " << size
-             << ", tasks for each process: " << TASK_NUM
-             << ", iterations: " << ITERATIONS << std::endl;
+            << ", tasks for each process: " << TASK_NUM
+            << ", iterations: " << ITERATIONS << std::endl;
     }
 
     // создание потокобезопасной очереди и запускаем потоки учтанавливая флаг
@@ -245,6 +253,8 @@ int main(int argc, char *argv[]) {
     double time  = finish - start;
     double maxTime = 0;
     MPI_Allreduce(&time, &maxTime, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+
+    MPI_Barrier(MPI_COMM_WORLD);
 
     if (rank == 0) {
         std::cout << "total time: " << maxTime << " sec" << std::endl;
