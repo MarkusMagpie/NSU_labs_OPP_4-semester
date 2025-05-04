@@ -77,13 +77,32 @@ public:
     }
 };
 
-// заполниние очереди задачами: время задачи зависит от rank процесса и номера итерации
+// 1 - МИН ЭФФЕКТИВНОСТЬ - заполниние очереди задачами: время задачи зависит от rank процесса и номера итерации
 void refillTaskList(SafeQueue &queue, int size, int rank, int iteration) {
     // задержка задачи: чем дальше rank от (iteration % size), тем дольше
     // +1 - чтобы не было нуля
     // *10 - множитель чтобы длинее работало (на мое усмотрение)
     int duration = (abs(rank - (iteration % size)) + 1) * 10;
     for (int i = 0; i < TASK_NUM; i++) {
+        queue.push(duration);
+    }
+}
+
+// 2 - МАКС ЭФФЕКТИВНОСТЬ - нулевой процесс имеет задачи, а остальные нет 
+void refillTaskList2(SafeQueue &queue, int size, int rank, int iteration) {
+    int duration = (abs(rank - (iteration % size)) + 1) * 10;
+    if (rank == 0) {
+        for (int i = 0; i < size * TASK_NUM; i++) {
+            queue.push(duration);
+        }
+    }
+}
+
+// 3 - СРЕДНЯЯ ЭФФЕКТИВНОСТЬ - первая половина процессов получает по TASK_NUM/2 задач. другая по TASK_NUM 
+void refillTaskList3(SafeQueue &queue, int size, int rank, int iteration) {
+    int duration = (abs(rank - (iteration % size)) + 1) * 10;
+    int tasks = (rank < size / 2) ? TASK_NUM/2 : (TASK_NUM + TASK_NUM/2);
+    for (int i = 0; i < tasks; i++) {
         queue.push(duration);
     }
 }
@@ -130,7 +149,7 @@ void runMessageThread(SafeQueue &queue, int size, int rank) {
 
             // если сообщение от executionThread - сигнал FINISHED, то останавливаем работу потока
             if (msg == FINISHED) {
-                std::cout << "proc " << rank << " finished" << std::endl;
+                std::cout << "mT[" << rank << "]: received FINISHED" << std::endl;
                 finishCount++;
                 queue.setRunning(false);
                 return;
@@ -151,7 +170,7 @@ void runMessageThread(SafeQueue &queue, int size, int rank) {
                 }
             }
 
-            std::cout << "mT: process " << rank << " can send "
+            std::cout << "mT[" << rank << "]: can send "
                 << taskCount << " tasks to proc " << recvRank << std::endl;
 
             // если так и не собралось ни одной задачи, отправляем статус NO_TASKS; иначе - число свободных задач
@@ -175,6 +194,7 @@ void runExecutingThread(SafeQueue &queue, int size, int rank) {
         // повторяем ITERATIONS раз: заполнение, выполнение, балансировка, барьер
         for (int i = 0; i < ITERATIONS; i++) {
             refillTaskList(queue, size, rank, i);
+            std::cout << "eT[" << rank << "]: initial queue size = " << queue.getSize() << " tasks" << std::endl;
             executeTasks(queue);
 
             if (BALANCE) {
@@ -187,7 +207,7 @@ void runExecutingThread(SafeQueue &queue, int size, int rank) {
                     // получение количества избыточных задач от процесса j 
                     MPI_Recv(&taskGiven, 1, MPI_INT, j, j, MPI_COMM_WORLD, &status1);
 
-                    std::cout << "eT: process " << j << " gave "
+                    std::cout << "eT[" << rank << "]: process " << j << " gave "
                         << taskGiven << " tasks to proc " << rank << std::endl;
 
                     // если процесс дал задачи, принимаем массив и выполняем их
@@ -196,7 +216,7 @@ void runExecutingThread(SafeQueue &queue, int size, int rank) {
                         MPI_Status status2;
                         // от процесса j теперь получаю непосредственно вектор интов с избыточными задачами
                         MPI_Recv(receivedTasks.data(), taskGiven, MPI_INT, j, j, MPI_COMM_WORLD, &status2);
-                        std::cout << "eT: process " << rank << " got " 
+                        std::cout << "eT[" << rank << "]: process " << rank << " got " 
                             << taskGiven << " tasks from proc " << j << std::endl;
                         for (int &val : receivedTasks) {
                             queue.push(val);
@@ -210,6 +230,7 @@ void runExecutingThread(SafeQueue &queue, int size, int rank) {
         }
 
         // после всех итераций посылаем FINISHED всем остальным процессам
+        std::cout << "eT[" << rank << "]: all iterations done, sending FINISHED..." << std::endl;
         int execFinished = FINISHED;
         for (int i = 0; i < size; i++) {
             if (i == rank) continue;
