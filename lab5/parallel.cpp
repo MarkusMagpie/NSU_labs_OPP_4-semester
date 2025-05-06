@@ -47,13 +47,12 @@ public:
     // извлекает из начала очереди задачку - сколько милисек нужно спать
     // bool pop(int &n) {
     //     std::lock_guard<std::mutex> lock(mtx);
-    //     if (!queue.empty()) {
-    //         // front возвращает ссылку на первый элемент, а begin возвращает итератор который нужен параметру в erase
-    //         n = queue.front(); // читаю первый элемент из queue
-    //         queue.erase(queue.begin()); // удаляю его
-    //         return true;
-    //     }
-    //     return false; 
+
+    //     if (queue.empty()) return false;
+    //     // front возвращает ссылку на первый элемент, а begin возвращает итератор который нужен параметру в erase
+    //     n = queue.front(); // читаю первый элемент из queue
+    //     queue.erase(queue.begin()); // удаляю его
+    //     return true;
     // }
 
     bool pop(int &n) {
