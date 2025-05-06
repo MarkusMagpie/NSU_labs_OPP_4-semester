@@ -80,7 +80,7 @@ public:
 // 1 - МИН ЭФФЕКТИВНОСТЬ - заполниние очереди задачами: время задачи зависит от rank процесса и номера итерации
 void refillTaskList(SafeQueue &queue, int size, int rank, int iteration) {
     // задержка задачи: чем дальше rank от (iteration % size), тем дольше
-    // +1 - чтобы не было нуля
+    // +1 - чтобы не было нуля (ранг 2, итерация 10, сайз 4)
     // *10 - множитель чтобы длинее работало (на мое усмотрение)
     int duration = (abs(rank - (iteration % size)) + 1) * 10;
     for (int i = 0; i < TASK_NUM; i++) {
@@ -262,12 +262,11 @@ int main(int argc, char *argv[]) {
     queue.setRunning(true);
 
     double start = MPI_Wtime();
-    runMessageThread(queue, size, rank);
+    
+    runMessageThread(queue, size, rank); // обертки для создания потоков
     runExecutingThread(queue, size, rank);
-
-    // ожидаем завершения двух потоков
-    if (messageThread.joinable()) messageThread.join();
-    if (executingThread.joinable()) executingThread.join();
+    messageThread.join();
+    executingThread.join();
 
     // ищем максимальное время выполнения среди всех процессов
     double finish = MPI_Wtime();
