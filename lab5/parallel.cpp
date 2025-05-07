@@ -24,9 +24,6 @@ enum Status {
 std::thread messageThread;
 std::thread executingThread;
 
-// счётчик завершённых процессов
-int finishCount = 0;
-
 // потокобезопасная очередь задач
 class SafeQueue {
 private:
@@ -45,16 +42,6 @@ public:
     }
 
     // извлекает из начала очереди задачку - сколько милисек нужно спать
-    // bool pop(int &n) {
-    //     std::lock_guard<std::mutex> lock(mtx);
-
-    //     if (queue.empty()) return false;
-    //     // front возвращает ссылку на первый элемент, а begin возвращает итератор который нужен параметру в erase
-    //     n = queue.front(); // читаю первый элемент из queue
-    //     queue.erase(queue.begin()); // удаляю его
-    //     return true;
-    // }
-
     bool pop(int &n) {
         std::unique_lock<std::mutex> lock(mtx);
 
@@ -66,7 +53,6 @@ public:
         queue.erase(queue.begin()); // удаляю его
         return true;
     }
-
 
     int getSize() {
         std::lock_guard<std::mutex> lock(mtx);
@@ -138,12 +124,6 @@ void runMessageThread(SafeQueue &queue, int size, int rank) {
         std::vector<int> taskList; // временный список задач для отправки
 
         while (queue.isRunning()) {
-            // если получили сообщение о завершении от всех процессов, выходим
-            if (finishCount == size) {
-                queue.setRunning(false);
-                return;
-            }
-
             /* неблокирующий БЕСКОНЕЧНЫЙ приём сообщения от любого источника с tag = size+1 - УНИКАЛЬНЫЙ тег именно для 
             ообщений-запросов задач: ранг или FINISHED 
             */ 
@@ -162,9 +142,8 @@ void runMessageThread(SafeQueue &queue, int size, int rank) {
             // если сообщение от executionThread - сигнал FINISHED, то останавливаем работу потока
             if (msg == FINISHED) {
                 std::cout << "mT[" << rank << "]: received FINISHED" << std::endl;
-                finishCount++;
                 queue.setRunning(false);
-                return;
+                continue;
             }
 
             // иначе msg = rank процесса, запрашивающего задачи и нам нужно отправить в msg свободные задачи
@@ -213,7 +192,7 @@ void runExecutingThread(SafeQueue &queue, int size, int rank) {
                 // обход всех процессов по size для запроса задач у них (у себя не спрашивать!)
                 for (int j = 0; j < size; j++) {
                     if (j == rank) continue;
-                    // отсылка ранга процессу j 
+                    // отсылка ранга процессу j по особому тегу size+1
                     MPI_Send(&rank, 1, MPI_INT, j, size + 1, MPI_COMM_WORLD);
                     MPI_Status status1;
                     // получение количества избыточных задач от процесса j 
