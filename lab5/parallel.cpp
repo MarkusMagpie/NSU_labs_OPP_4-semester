@@ -9,7 +9,7 @@
 #include <chrono>
 
 enum Measures {
-    TASK_NUM = 50, // число задач на каждом процессе
+    TASK_NUM = 500, // число задач на каждом процессе
     ITERATIONS = 10 // число итераций выполнения программы
 };
 
@@ -17,7 +17,7 @@ enum Measures {
 enum Status {
     FINISHED = -1, // все задачи завершены
     NO_TASKS = -2, // нет задач для передачи
-    BALANCE = 1 // ФЛАГ БАЛАНСА - делаю с без него и с ним графики 
+    BALANCE = 0, // ФЛАГ БАЛАНСА - делаю с без него и с ним графики 
 };
 
 // потоки: для обработки сообщений и выполнения задач
@@ -78,10 +78,9 @@ public:
 // 1 - МИН ЭФФЕКТИВНОСТЬ - заполниние очереди задачами: время задачи зависит от rank процесса и номера итерации
 void refillTaskList(SafeQueue &queue, int size, int rank, int iteration) {
     // задержка задачи: чем дальше rank от (iteration % size), тем дольше
-    // +1 - чтобы не было нуля (ранг 2, итерация 10, сайз 4)
     // *10 - множитель чтобы длинее работало (на мое усмотрение)
     int duration = (abs(rank - (iteration % size)) + 1) * 10;
-    for (int i = 0; i < TASK_NUM; i++) {
+    for (int i = 0; i < TASK_NUM / size; i++) {
         queue.push(duration);
     }
 }
@@ -90,20 +89,49 @@ void refillTaskList(SafeQueue &queue, int size, int rank, int iteration) {
 void refillTaskList2(SafeQueue &queue, int size, int rank, int iteration) {
     int duration = (abs(rank - (iteration % size)) + 1) * 10;
     if (rank == 0) {
-        for (int i = 0; i < size * TASK_NUM; i++) {
+        for (int i = 0; i < TASK_NUM; i++) {
             queue.push(duration);
         }
     }
 }
 
 // 3 - СРЕДНЯЯ ЭФФЕКТИВНОСТЬ - первая половина процессов получает по TASK_NUM/2 задач. другая по TASK_NUM 
+// void refillTaskList3(SafeQueue &queue, int size, int rank, int iteration) {
+//     int duration = (abs(rank - (iteration % size)) + 1) * 10;
+//     int tasks = (rank < size / 2) ? TASK_NUM/size/2 : (TASK_NUM/size + TASK_NUM/size/2);
+//     for (int i = 0; i < tasks; i++) {
+//         queue.push(duration);
+//     }
+// }
+
 void refillTaskList3(SafeQueue &queue, int size, int rank, int iteration) {
     int duration = (abs(rank - (iteration % size)) + 1) * 10;
-    int tasks = (rank < size / 2) ? TASK_NUM/2 : (TASK_NUM + TASK_NUM/2);
-    for (int i = 0; i < tasks; i++) {
+    int totalTasks = TASK_NUM;
+    int baseTasks = totalTasks / size;
+    int extraTasks = totalTasks % size;
+    int myTasks = baseTasks + (rank < extraTasks ? 1 : 0);
+
+    if (rank < size / 2) {
+        myTasks = myTasks / 2;
+    } else {
+        myTasks = myTasks + myTasks / 2;
+    }
+
+    for (int i = 0; i < myTasks; i++) {
         queue.push(duration);
     }
 }
+
+// void refillTotal(SafeQueue &queue, int size, int rank, int iteration) {
+//     int duration = (abs(rank - (iteration % size)) + 1) * 10;
+//     int TOTAL_TASKS = TASK_NUM;
+//     int base = TOTAL_TASKS / size;
+//     int extra = TOTAL_TASKS % size;
+//     int myTasks = base + (rank < extra ? 1 : 0);
+//     for (int i = 0; i < myTasks; ++i) {
+//         queue.push(duration);
+//     }
+// }
 
 // выполняем задачи из очереди
 void executeTasks(SafeQueue &queue) {
@@ -148,14 +176,19 @@ void runMessageThread(SafeQueue &queue, int size, int rank) {
 
             // иначе msg = rank процесса, запрашивающего задачи и нам нужно отправить в msg свободные задачи
             recvRank = msg;
+
+            // std::cout << "mT[" << rank << "]: has " << queue.getSize() << " tasks before sending" << std::endl;
             
             int taskCount = 0;
             // если в queue есть избыточные задачи, соберём половину для отправки
-            if (queue.getSize() > TASK_NUM / size) {
-                taskList.resize(TASK_NUM / size);
+            int available = queue.getSize();
+            int give = available > 1 ? available / 2 : 0;
+            if (give > 0) {
+                // вырезаем give задач и отправляем
+                taskList.resize(give);
                 while (queue.pop(taskList[taskCount])) {
                     taskCount++;
-                    if (taskCount == TASK_NUM / size) {
+                    if (taskCount == give) {
                         break;
                     }
                 }
@@ -173,6 +206,8 @@ void runMessageThread(SafeQueue &queue, int size, int rank) {
                 MPI_Send(taskList.data(), taskCount, MPI_INT, recvRank, rank, MPI_COMM_WORLD);
             }
             taskList.clear();
+
+            // std::cout << "mT[" << rank << "]: has " << queue.getSize() << " tasks left" << std::endl;
         }
     });
 }
@@ -184,7 +219,7 @@ void runExecutingThread(SafeQueue &queue, int size, int rank) {
 
         // повторяем ITERATIONS раз: заполнение, выполнение, балансировка, барьер
         for (int i = 0; i < ITERATIONS; i++) {
-            refillTaskList(queue, size, rank, i);
+            refillTaskList2(queue, size, rank, i);
             std::cout << "eT[" << rank << "]: initial queue size = " << queue.getSize() << " tasks" << std::endl;
             executeTasks(queue);
 
@@ -197,9 +232,6 @@ void runExecutingThread(SafeQueue &queue, int size, int rank) {
                     MPI_Status status1;
                     // получение количества избыточных задач от процесса j 
                     MPI_Recv(&taskGiven, 1, MPI_INT, j, j, MPI_COMM_WORLD, &status1);
-
-                    std::cout << "eT[" << rank << "]: process " << j << " gave "
-                        << taskGiven << " tasks to proc " << rank << std::endl;
 
                     // если процесс дал задачи, принимаем массив и выполняем их
                     if (taskGiven != NO_TASKS) {
