@@ -17,7 +17,7 @@ enum Measures {
 enum Status {
     FINISHED = -1, // все задачи завершены
     NO_TASKS = -2, // нет задач для передачи
-    BALANCE = 0, // ФЛАГ БАЛАНСА - делаю с без него и с ним графики 
+    BALANCE = 1, // ФЛАГ БАЛАНСА - делаю с без него и с ним графики 
 };
 
 // потоки: для обработки сообщений и выполнения задач
@@ -106,9 +106,8 @@ void refillTaskList2(SafeQueue &queue, int size, int rank, int iteration) {
 
 void refillTaskList3(SafeQueue &queue, int size, int rank, int iteration) {
     int duration = (abs(rank - (iteration % size)) + 1) * 10;
-    int totalTasks = TASK_NUM;
-    int baseTasks = totalTasks / size;
-    int extraTasks = totalTasks % size;
+    int baseTasks = TASK_NUM / size;
+    int extraTasks = TASK_NUM % size;
     int myTasks = baseTasks + (rank < extraTasks ? 1 : 0);
 
     if (rank < size / 2) {
@@ -219,7 +218,7 @@ void runExecutingThread(SafeQueue &queue, int size, int rank) {
 
         // повторяем ITERATIONS раз: заполнение, выполнение, балансировка, барьер
         for (int i = 0; i < ITERATIONS; i++) {
-            refillTaskList2(queue, size, rank, i);
+            refillTaskList(queue, size, rank, i);
             std::cout << "eT[" << rank << "]: initial queue size = " << queue.getSize() << " tasks" << std::endl;
             executeTasks(queue);
 
