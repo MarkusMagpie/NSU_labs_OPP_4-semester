@@ -218,7 +218,7 @@ void runExecutingThread(SafeQueue &queue, int size, int rank) {
 
         // повторяем ITERATIONS раз: заполнение, выполнение, балансировка, барьер
         for (int i = 0; i < ITERATIONS; i++) {
-            refillTaskList(queue, size, rank, i);
+            refillTaskList2(queue, size, rank, i);
             std::cout << "eT[" << rank << "]: initial queue size = " << queue.getSize() << " tasks" << std::endl;
             executeTasks(queue);
 
